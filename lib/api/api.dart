@@ -29,8 +29,8 @@ class Api{
   static const accessTokenKey="Access_Token";
   static const refreshTokenKey="Refresh_Token";
   static const deviceIdKey="Device_Id";
-  static const baseUrl='https://api.edugarciamovimiento.com/api/v1';
-  static const imgBaseUrl='https://admin.edugarciamovimiento.com/fitness/uploads';
+  static const baseUrl='https://api.edumovimiento.com/api/v1';
+  static const imgBaseUrl='https://res.cloudinary.com/zft8bss0/image/upload/';
 
   static Api get instance =>_api;
 
@@ -354,8 +354,7 @@ class Api{
       final data = jsonEncode({
         'email': email,
         'password': password,
-        'device_id': deviceId,
-        'device_name': deviceName,
+        'device_id': deviceId
       });
 
       var headers = {
@@ -420,8 +419,7 @@ class Api{
         'email': email,
         'password': password,
         'cpassword': confirmPassword,
-        'device_id': deviceId,
-        'device_name': deviceName,
+        'device_id': deviceId
       });
 
       var headers = {
