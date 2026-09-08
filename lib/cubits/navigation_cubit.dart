@@ -7,4 +7,8 @@ class NavigationCubit extends Cubit<int>{
   void changeIndex(int index){
     emit(index);
   }
+
+  void updateIndex(int index){
+    emit(index);
+  }
 }

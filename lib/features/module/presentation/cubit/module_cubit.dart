@@ -1,5 +1,6 @@
 import 'package:edu_gym/api/api.dart';
 import 'package:edu_gym/core/cubit_states/data_state.dart';
+import 'package:edu_gym/core/error/failure.dart';
 import 'package:edu_gym/modal/lesson.dart';
 import 'package:edu_gym/modal/module.dart';
 import 'package:edu_gym/modal/syllabus.dart';
@@ -16,16 +17,48 @@ class ModuleCubit extends Cubit<DataState>{
     _moduleId = moduleId;
     emit(DataLoading());
     
+    // print('📡 [MODULE CUBIT] Fetching module data for moduleId: $moduleId');
     final res = await Api.instance.getModuleLessons(
       moduleId: moduleId,
       limit: _defaultLimit,
     );
     
     res.fold((error){
+      // print('❌ [MODULE CUBIT] Failed to load module data: ${error.message}');
       emit(DataLoadFailed(error));
     }, (jsonData){
-      final module = Module.fromJson(jsonData['data']);
-      emit(DataLoaded<Module>(module));
+      // print('=================== [MODULE LESSONS DATA] ===================');
+      // print('📦 Raw Data: ${jsonEncode(jsonData)}');
+      try {
+        final module = Module.fromJson(jsonData['data']);
+        // print('🏷️ Module ID: ${module.moduleId}');
+        // print('🏷️ Module Title: ${module.moduleTitle}');
+        // print('🏷️ Module isFree: ${module.isFree}');
+        // print('🏷️ Module alreadyOwned: ${module.alreadyOwned}');
+        // print('🏷️ Total Syllabus Count: ${module.syllabus?.length ?? 0}');
+
+        // if (module.syllabus != null && module.syllabus!.isNotEmpty) {
+        //   for (var s in module.syllabus!) {
+        //     print('  📘 Syllabus [${s.syllabusId}] "${s.syllabusTitle}" (Lessons: ${s.lessons?.length ?? 0}):');
+        //     if (s.lessons != null) {
+        //       for (var l in s.lessons!) {
+        //         print('    ▶️ Lesson [${l.lessonId}] "${l.lessonTitle}": videoProviderId=${l.videoProviderId}, videoId=${l.videoId}, isFree=${l.isFree}');
+        //       }
+        //     }
+        //   }
+        // }
+        // if (module.lessons != null && module.lessons!.isNotEmpty) {
+        //   print('  📘 Direct Lessons Count: ${module.lessons!.length}');
+        //   for (var l in module.lessons!) {
+        //     print('    ▶️ Lesson [${l.lessonId}] "${l.lessonTitle}": videoProviderId=${l.videoProviderId}, videoId=${l.videoId}, isFree=${l.isFree}');
+        //   }
+        // }
+        // print('=============================================================');
+        emit(DataLoaded<Module>(module));
+      } catch (e) {
+        // print('❌ [MODULE CUBIT] Error parsing module lessons data: $e');
+        emit(DataLoadFailed(Failure('Failed to parse module: $e')));
+      }
     });
   }
 
@@ -45,6 +78,7 @@ class ModuleCubit extends Cubit<DataState>{
     _loadingSyllabusId = syllabusId;
     emit(DataLoaded(currentModule));
 
+    // print('📡 [MODULE CUBIT] Fetching more lessons for syllabusId: $syllabusId with cursor: ${syllabus.lessonsNextCursor}');
     final res = await Api.instance.getModuleLessons(
       moduleId: _moduleId,
       limit: 2, // Request 2 lessons at a time as per user hint
@@ -53,70 +87,78 @@ class ModuleCubit extends Cubit<DataState>{
     );
 
     res.fold((error){
+      // print('❌ [MODULE CUBIT] Failed to load more lessons: ${error.message}');
       _loadingSyllabusId = null;
       emit(DataLoaded(currentModule));
     }, (jsonData){
-      final newModuleData = Module.fromJson(jsonData['data']);
-      
-      // Find the specific syllabus in the new response
-      final newSyllabus = newModuleData.syllabus?.firstWhere(
-        (s) => s.syllabusId == syllabusId,
-        orElse: () => syllabus,
-      );
-
-      if (newSyllabus != null) {
-        final List<Lesson> updatedLessons = [
-          ...(syllabus.lessons ?? []),
-          ...(newSyllabus.lessons ?? []),
-        ];
-
-        final updatedSyllabus = Syllabus(
-          syllabusId: syllabus.syllabusId,
-          syllabusTitle: syllabus.syllabusTitle,
-          syllabusOrder: syllabus.syllabusOrder,
-          syllabusDescription: syllabus.syllabusDescription,
-          lessons: updatedLessons,
-          lessonCount: syllabus.lessonCount,
-          currentPage: newSyllabus.currentPage,
-          totalPages: newSyllabus.totalPages,
-          hasMore: newSyllabus.hasMore,
-          lessonsNextCursor: newSyllabus.lessonsNextCursor,
-          lessonsHasMore: newSyllabus.lessonsHasMore,
-          releaseTiming: syllabus.releaseTiming,
-          isReleased: syllabus.isReleased,
+      // print('📥 [LOAD MORE LESSONS API RESPONSE]: ${jsonEncode(jsonData)}');
+      try {
+        final newModuleData = Module.fromJson(jsonData['data']);
+        
+        // Find the specific syllabus in the new response
+        final newSyllabus = newModuleData.syllabus?.firstWhere(
+          (s) => s.syllabusId == syllabusId,
+          orElse: () => syllabus,
         );
 
-        final updatedSyllabusList = List<Syllabus>.from(currentModule.syllabus!);
-        updatedSyllabusList[syllabusIndex] = updatedSyllabus;
+        if (newSyllabus != null) {
+          final List<Lesson> updatedLessons = [
+            ...(syllabus.lessons ?? []),
+            ...(newSyllabus.lessons ?? []),
+          ];
 
-        final updatedModule = Module(
-          moduleId: currentModule.moduleId,
-          moduleTitle: currentModule.moduleTitle,
-          moduleImage: currentModule.moduleImage,
-          lessons: currentModule.lessons,
-          lessonCount: currentModule.lessonCount,
-          moduleDes: currentModule.moduleDes,
-          moduleVideo: currentModule.moduleVideo,
-          moduleVideoDuration: currentModule.moduleVideoDuration,
-          moduleCategory: currentModule.moduleCategory,
-          syllabus: updatedSyllabusList,
-          syllabusCount: currentModule.syllabusCount,
-          currentSyllabusPage: currentModule.currentSyllabusPage,
-          totalSyllabusPages: currentModule.totalSyllabusPages,
-          hasSyllabusMore: currentModule.hasSyllabusMore,
-          syllabusNextCursor: currentModule.syllabusNextCursor,
-          isReleased: currentModule.isReleased,
-          categories: currentModule.categories,
-          sections: currentModule.sections,
-          badges: currentModule.badges,
-          alreadyOwned: currentModule.alreadyOwned,
-          originalPrice: currentModule.originalPrice,
-          discountedPrice: currentModule.discountedPrice,
-        );
+          final updatedSyllabus = Syllabus(
+            syllabusId: syllabus.syllabusId,
+            syllabusTitle: syllabus.syllabusTitle,
+            syllabusOrder: syllabus.syllabusOrder,
+            syllabusDescription: syllabus.syllabusDescription,
+            lessons: updatedLessons,
+            lessonCount: syllabus.lessonCount,
+            currentPage: newSyllabus.currentPage,
+            totalPages: newSyllabus.totalPages,
+            hasMore: newSyllabus.hasMore,
+            lessonsNextCursor: newSyllabus.lessonsNextCursor,
+            lessonsHasMore: newSyllabus.lessonsHasMore,
+            releaseTiming: syllabus.releaseTiming,
+            isReleased: syllabus.isReleased,
+          );
 
-        _loadingSyllabusId = null;
-        emit(DataLoaded<Module>(updatedModule));
-      } else {
+          final updatedSyllabusList = List<Syllabus>.from(currentModule.syllabus!);
+          updatedSyllabusList[syllabusIndex] = updatedSyllabus;
+
+          final updatedModule = Module(
+            moduleId: currentModule.moduleId,
+            moduleTitle: currentModule.moduleTitle,
+            moduleImage: currentModule.moduleImage,
+            lessons: currentModule.lessons,
+            lessonCount: currentModule.lessonCount,
+            moduleDes: currentModule.moduleDes,
+            moduleVideo: currentModule.moduleVideo,
+            moduleVideoDuration: currentModule.moduleVideoDuration,
+            moduleCategory: currentModule.moduleCategory,
+            syllabus: updatedSyllabusList,
+            syllabusCount: currentModule.syllabusCount,
+            currentSyllabusPage: currentModule.currentSyllabusPage,
+            totalSyllabusPages: currentModule.totalSyllabusPages,
+            hasSyllabusMore: currentModule.hasSyllabusMore,
+            syllabusNextCursor: currentModule.syllabusNextCursor,
+            isReleased: currentModule.isReleased,
+            isFree: currentModule.isFree,
+            categories: currentModule.categories,
+            sections: currentModule.sections,
+            badges: currentModule.badges,
+            alreadyOwned: currentModule.alreadyOwned,
+            originalPrice: currentModule.originalPrice,
+            discountedPrice: currentModule.discountedPrice,
+          );
+
+          _loadingSyllabusId = null;
+          emit(DataLoaded<Module>(updatedModule));
+        } else {
+          _loadingSyllabusId = null;
+          emit(DataLoaded<Module>(currentModule));
+        }
+      } catch (e) {
         _loadingSyllabusId = null;
         emit(DataLoaded<Module>(currentModule));
       }

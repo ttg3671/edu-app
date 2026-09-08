@@ -7,7 +7,8 @@ import '../../cubits/video_cubit.dart';
 
 class LandscapeVideo extends StatelessWidget {
   final bool isTrailer;
-  const LandscapeVideo({super.key, required this.isTrailer});
+  final String? videoUrl;
+  const LandscapeVideo({super.key, required this.isTrailer, this.videoUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +28,7 @@ class LandscapeVideo extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: SafeArea(
-          child: Player(isTrailer: isTrailer,isLandscape: true,),
+          child: Player(isTrailer: isTrailer,isLandscape: true, videoUrl: videoUrl,),
         ),
       ),
     );

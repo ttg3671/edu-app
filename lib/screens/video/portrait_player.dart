@@ -5,7 +5,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../responsive.dart';
 
 class PortraitPlayer extends StatelessWidget {
-  const PortraitPlayer({super.key});
+  final String? videoUrl;
+  const PortraitPlayer({super.key, this.videoUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +14,7 @@ class PortraitPlayer extends StatelessWidget {
       height: Responsive.isTablet? 0.3.sh :0.25.sh,
       width: double.infinity,
       color: Colors.black,
-      child: const Player(isTrailer: false,),
-    );;
+      child: Player(isTrailer: false, videoUrl: videoUrl,),
+    );
   }
 }

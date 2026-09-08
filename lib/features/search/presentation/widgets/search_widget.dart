@@ -3,10 +3,7 @@ import 'package:edu_gym/core/common/widgets/custom_shimmer.dart';
 import 'package:edu_gym/core/utils/convert.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:shimmer/shimmer.dart';
 
-import '../../../../utils/convert_utils.dart';
-import '../../../../utils/utils.dart';
 
 class SearchWidget extends StatelessWidget {
   final int id;

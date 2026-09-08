@@ -25,4 +25,6 @@ class VideoError extends PlayerState{
 
 class SubNotActive extends PlayerState{}
 
+class AuthRequired extends PlayerState{}
+
 

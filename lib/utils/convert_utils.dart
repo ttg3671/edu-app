@@ -4,7 +4,7 @@ class ConvertUtils{
   static String getTimeDiff(String date) {
 
     DateTime dateTime=DateTime.now();
-    DateTime usaTime=dateTime.subtract(Duration(hours: 9,minutes: 30));
+    DateTime usaTime=dateTime.subtract(const Duration(hours: 9,minutes: 30));
 
     // Define the specific date
     final targetDate = DateTime.parse(date);
@@ -24,13 +24,13 @@ class ConvertUtils{
     // Create result string
     String result;
     if (years > 0) {
-      result = '${years} year${years > 1 ? 's' : ''} ago';
+      result = '$years year${years > 1 ? 's' : ''} ago';
     } else if (months > 0) result = '$months month${months > 1 ? 's' : ''} ago';
-    else if (weeks > 0) result = '${weeks} week${weeks > 1 ? 's' : ''} ago';
-    else if (days > 0) result = '${days} day${days > 1 ? 's' : ''} ago';
-    else if (hours > 0) result = '${hours} hour${hours > 1 ? 's' : ''} ago';
-    else if (minutes > 0) result = '${minutes} minute${minutes > 1 ? 's' : ''} ago';
-    else result = '${seconds} second${seconds > 1 ? 's' : ''} ago';
+    else if (weeks > 0) result = '$weeks week${weeks > 1 ? 's' : ''} ago';
+    else if (days > 0) result = '$days day${days > 1 ? 's' : ''} ago';
+    else if (hours > 0) result = '$hours hour${hours > 1 ? 's' : ''} ago';
+    else if (minutes > 0) result = '$minutes minute${minutes > 1 ? 's' : ''} ago';
+    else result = '$seconds second${seconds > 1 ? 's' : ''} ago';
 
     return result;
   }
@@ -72,19 +72,19 @@ class ConvertUtils{
     String result;
 
     if (years > 0) {
-      result = '${years} year${years > 1 ? 's' : ''} ago';
+      result = '$years year${years > 1 ? 's' : ''} ago';
     } else if (months > 0) {
-      result = '${months} month${months > 1 ? 's' : ''} ago';
+      result = '$months month${months > 1 ? 's' : ''} ago';
     } else if (weeks > 0) {
-      result = '${weeks} week${weeks > 1 ? 's' : ''} ago';
+      result = '$weeks week${weeks > 1 ? 's' : ''} ago';
     } else if (days > 0) {
-      result = '${days} day${days > 1 ? 's' : ''} ago';
+      result = '$days day${days > 1 ? 's' : ''} ago';
     } else if (hours > 0) {
-      result = '${hours} hour${hours > 1 ? 's' : ''} ago';
+      result = '$hours hour${hours > 1 ? 's' : ''} ago';
     } else if (minutes > 0) {
-      result = '${minutes} minute${minutes > 1 ? 's' : ''} ago';
+      result = '$minutes minute${minutes > 1 ? 's' : ''} ago';
     } else {
-      result = '${seconds} second${seconds > 1 ? 's' : ''} ago';
+      result = '$seconds second${seconds > 1 ? 's' : ''} ago';
     }
 
     return result;

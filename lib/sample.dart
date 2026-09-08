@@ -7,13 +7,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
 import 'features/auth/presentation/cubit/login_cubit.dart';
 import 'features/auth/presentation/pages/login.dart';
-import 'features/auth/presentation/pages/register.dart';
 import 'features/auth/presentation/widgets/auth_btn.dart';
 import 'features/auth/presentation/widgets/auth_textfields.dart';
 import 'features/auth/presentation/widgets/bottom_rich_text.dart';
 import 'features/auth/presentation/widgets/terms_richText.dart';
-import 'features/auth/presentation/widgets/top_text.dart';
-import 'main.dart';
 
 class Sample extends StatefulWidget {
   const Sample({super.key});
@@ -141,6 +138,6 @@ class _SampleState extends State<Sample> {
           ),
         ),
       ),
-    );;
+    );
   }
 }

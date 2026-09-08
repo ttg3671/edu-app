@@ -1,5 +1,6 @@
-import 'package:edu_gym/core/common/constant/image_constant.dart';
+import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/core/theme/app_color.dart';
+import 'package:edu_gym/core/common/constant/image_constant.dart';
 import 'package:edu_gym/features/auth/presentation/pages/login.dart';
 import 'package:edu_gym/features/auth/presentation/pages/register.dart';
 import 'package:edu_gym/features/auth/presentation/widgets/auth_btn.dart';
@@ -13,11 +14,26 @@ class StartingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (TokenApi.isUserLoggedIn()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => MyHomePage()),
+          (route) => false,
+        );
+      });
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     final textTheme = Theme.of(context).textTheme;
     final localizations = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColor.background,
       body: SafeArea(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 20.w),
@@ -40,12 +56,12 @@ class StartingScreen extends StatelessWidget {
 
               const Spacer(),
 
-              // Create New Account Button - Tan/Sand color
+              // Create New Account Button - Primary Brand Color
               AuthBtn(
                 text: localizations?.createNewAccount ?? 'Create New Account',
                 width: double.infinity,
-                bgColor: const Color(0xFFE7B584),
-                textColor: Colors.white,
+                bgColor: AppColor.primary,
+                textColor: AppColor.background,
                 onTap: () {
                   Navigator.push(
                     context,
@@ -58,12 +74,12 @@ class StartingScreen extends StatelessWidget {
 
               SizedBox(height: 20.h),
 
-              // Log In Button - Black
+              // Log In Button - Light Grey
               AuthBtn(
                 text: localizations?.login ?? 'Log In',
                 width: double.infinity,
-                bgColor: Colors.black,
-                textColor: Colors.white,
+                bgColor: Colors.grey.shade200,
+                textColor: AppColor.text,
                 hasBorder: false,
                 fontSize: 26.sp,
                 letterSpacing: 0,
@@ -79,39 +95,49 @@ class StartingScreen extends StatelessWidget {
 
               SizedBox(height: 30.h),
 
-              // Explore without an account - Normal weight, black, custom underline with gap
-              GestureDetector(
-                onTap: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => MyHomePage(),
-                    ),
-                    (Route<dynamic> route) => false,
-                  );
-                },
-                child: Container(
-                  padding: EdgeInsets.only(bottom: 2.h),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: Colors.black,
-                        width: 1,
+              // Explore without an account button with transparent bg and generous click area
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const MyHomePage(),
                       ),
+                      (Route<dynamic> route) => false,
+                    );
+                  },
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    padding: EdgeInsets.symmetric(vertical: 16.h, horizontal: 20.w),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30.r),
                     ),
                   ),
-                  child: Text(
-                    localizations?.exploreWithoutAccount ?? 'Explore without an account',
-                    style: textTheme.bodyMedium?.copyWith(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.normal,
-                      color: Colors.black,
+                  child: Container(
+                    padding: EdgeInsets.only(bottom: 2.h),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: AppColor.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      localizations?.exploreWithoutAccount ?? 'Explore without an account',
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontSize: 18.sp,
+                        fontWeight: FontWeight.bold,
+                        color: AppColor.text,
+                      ),
                     ),
                   ),
                 ),
               ),
 
-              SizedBox(height: 40.h),
+              SizedBox(height: 30.h),
             ],
           ),
         ),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:edu_gym/api/api.dart';
 import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/core/common/constant/image_constant.dart';
@@ -5,11 +6,13 @@ import 'package:edu_gym/core/cubit_states/data_state.dart';
 import 'package:edu_gym/features/account/presentation/cubit/account_cubit.dart';
 import 'package:edu_gym/features/account/presentation/widgets/account_details_container.dart';
 import 'package:edu_gym/features/account/presentation/widgets/account_details_shimmer.dart';
-import 'package:edu_gym/features/account/presentation/screens/connected_devices_screen.dart';
+import 'package:edu_gym/features/account/presentation/screens/subscription_screen.dart';
+import 'package:edu_gym/features/account/presentation/screens/settings_screen.dart';
 import 'package:edu_gym/features/auth/presentation/pages/login.dart';
 import 'package:edu_gym/features/auth/presentation/pages/register.dart';
 import 'package:edu_gym/features/auth/presentation/pages/profile.dart';
-import 'package:edu_gym/main.dart';
+import 'package:edu_gym/features/auth/presentation/pages/starting_screen.dart';
+import 'package:edu_gym/features/home/presentation/cubit/new_home_cubit.dart';
 import 'package:edu_gym/modal/user_details.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -18,16 +21,26 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/app_color.dart';
 import '../../../../screens/webview/show_webview.dart';
-import '../../../auth/domain/entities/user.dart';
 import '../../../../cubits/language_cubit.dart';
 import '../../../../l10n/app_localizations.dart';
 
-class Account extends StatelessWidget {
+class Account extends StatefulWidget {
   const Account({super.key});
 
   @override
+  State<Account> createState() => _AccountState();
+}
+
+class _AccountState extends State<Account> {
+  String _maskEmail(String email) {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.length <= 2) return '$trimmed***';
+    return '${trimmed[0]}***${trimmed[trimmed.length - 1]}';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    UserDetails? userDetails;
     final localizations = AppLocalizations.of(context);
     final bool isLoggedIn = TokenApi.isUserLoggedIn();
 
@@ -43,7 +56,7 @@ class Account extends StatelessWidget {
               Container(
                 padding: EdgeInsets.all(20.r),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: Colors.grey.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12.r),
                 ),
                 child: Column(
@@ -73,8 +86,8 @@ class Account extends StatelessWidget {
                               );
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
+                              backgroundColor: AppColor.primary,
+                              foregroundColor: AppColor.background,
                               padding: EdgeInsets.symmetric(vertical: 12.h),
                             ),
                             child: Text(localizations?.login ?? 'Login'),
@@ -90,8 +103,8 @@ class Account extends StatelessWidget {
                               );
                             },
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blue,
-                              side: const BorderSide(color: Colors.blue),
+                              foregroundColor: AppColor.primary,
+                              side: const BorderSide(color: AppColor.primary),
                               padding: EdgeInsets.symmetric(vertical: 12.h),
                             ),
                             child: Text(localizations?.signUp ?? 'Sign Up'),
@@ -106,78 +119,65 @@ class Account extends StatelessWidget {
               // Logged in - show user details
               BlocBuilder<AccountCubit,DataState>(
                 builder: (BuildContext context, DataState state) {
-                  if(state is DataLoading){
+                  // Always prioritize the merged global user object
+                  UserDetails? userDetails = TokenApi.user;
+                  
+                  if(state is DataLoaded<UserDetails>){
+                    userDetails = state.data;
+                  }
+
+                  if(state is DataLoading && userDetails == null){
                     return const AccountDetailsShimmer();
                   }
-                  else if(state is DataLoadFailed){
-                    // Show error message and option to retry
-                    return Container(
-                      padding: EdgeInsets.all(20.r),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12.r),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            localizations?.translate('failed_to_load_account') ?? 'Failed to load account details',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.red,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          SizedBox(height: 8.h),
-                          Text(
-                            localizations?.translate('check_connection') ?? 'Please check your connection and try again',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          SizedBox(height: 12.h),
-                          ElevatedButton(
-                            onPressed: () {
-                              context.read<AccountCubit>().getAccountDetails();
-                            },
-                            child: Text(localizations?.retry ?? 'Retry'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  else if(state is DataLoaded<UserDetails>){
-                    userDetails=state.data;
-                    final String displayName = (userDetails?.name != null && userDetails!.name!.isNotEmpty)
-                        ? userDetails!.name!
-                        : TokenApi.getUsernameFromEmail(userDetails?.email);
+
+                  if (userDetails != null) {
+                    final user = userDetails!;
+                    final String displayName = (user.name != null && user.name!.isNotEmpty)
+                        ? user.name!
+                        : TokenApi.getUsernameFromEmail(user.email);
 
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        (userDetails?.image != null && userDetails!.image!.isNotEmpty)?
                         Container(
                           height: 60.h,
                           width: 60.w,
-                          decoration: BoxDecoration(
-                              image: DecorationImage(
-                                  image: NetworkImage(userDetails!.image!),
-                                  fit: BoxFit.cover
-                              ),
-                              shape: BoxShape.circle
-                          ),
-                        ):
-                        Container(
-                          height: 60.h,
-                          width: 60.w,
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.green.shade100,
+                            color: AppColor.primary,
                           ),
-                          child: Center(
-                            child: Icon(
-                              Icons.person,
-                              size: 30.sp,
-                              color: Colors.green.shade700,
-                            ),
+                          child: ClipOval(
+                            child: (user.avatarUrl != null && user.avatarUrl!.isNotEmpty)
+                                ? CachedNetworkImage(
+                                    imageUrl: user.fullAvatarUrl,
+                                    fit: BoxFit.cover,
+                                    width: 60.w,
+                                    height: 60.h,
+                                    placeholder: (context, url) => const Center(
+                                      child: CircularProgressIndicator(color: AppColor.background, strokeWidth: 2),
+                                    ),
+                                    errorWidget: (context, url, error) => Center(
+                                      child: Text(
+                                        displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+                                        style: TextStyle(
+                                          fontSize: 24.sp,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColor.background,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
+                                      style: TextStyle(
+                                        fontSize: 24.sp,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColor.background,
+                                      ),
+                                    ),
+                                  ),
                           ),
                         ),
                         SizedBox(width: 15.w,),
@@ -195,7 +195,7 @@ class Account extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
 
-                              Text(userDetails?.email ?? '',
+                              Text(_maskEmail(user.email),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: Colors.grey.shade600
                                 ),
@@ -216,16 +216,10 @@ class Account extends StatelessWidget {
                             padding: EdgeInsets.symmetric(vertical: 6.h, horizontal: 18.w),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(99.r),
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  AppColor.gradient1,AppColor.gradient2,
-                                ],
-                              ),
+                              color: AppColor.primary,
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColor.gradient1.withOpacity(0.3),
+                                  color: AppColor.primary.withOpacity(0.3),
                                   blurRadius: 8,
                                   offset: const Offset(0, 4),
                                 )
@@ -234,7 +228,7 @@ class Account extends StatelessWidget {
                             child: Text(localizations?.edit ?? 'Edit',
                               style: Theme.of(context).textTheme.titleMedium!.copyWith(
                                   fontSize: 14.sp,
-                                  color: Colors.white,
+                                  color: AppColor.background,
                                   fontWeight: FontWeight.bold
                               ),
                             ),
@@ -253,17 +247,24 @@ class Account extends StatelessWidget {
               AccountDetailsContainer(
                   title: localizations?.account ?? 'Account',
                   list: [
-                    AccountDetailsModal(icon: Icons.person_2, title: localizations?.personalDetails ?? 'Personal Details', onTap: () async {
-                      await Navigator.push(context, MaterialPageRoute(builder: (builder)=>Profile(userDetails: userDetails,)));
-                      // Refresh account details after returning from profile
-                      context.read<AccountCubit>().getAccountDetails();
-                    }),
-                    AccountDetailsModal(icon: Icons.devices, title: 'Connected Devices', onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ConnectedDevicesScreen()));
-                    }),
-                    AccountDetailsModal(icon: Icons.subscriptions, title: localizations?.subscription ?? 'Subscription', onTap: () {
-                      print('object');
-                    }),
+                    AccountDetailsModal(
+                      icon: Icons.person_2, 
+                      title: localizations?.profile ?? 'Profile', 
+                      onTap: () async {
+                        final userDetails = TokenApi.user;
+                        await Navigator.push(context, MaterialPageRoute(builder: (builder)=>Profile(userDetails: userDetails,)));
+                        // Refresh account details after returning from profile
+                        context.read<AccountCubit>().getAccountDetails();
+                      }
+                    ),
+                    AccountDetailsModal(
+                      icon: Icons.settings, 
+                      title: localizations?.translate('settings') ?? 'Settings', 
+                      onTap: () {
+                        final userDetails = TokenApi.user;
+                        Navigator.push(context, MaterialPageRoute(builder: (builder)=>SettingsScreen(userDetails: userDetails!)));
+                      }
+                    ),
                   ]
               ),
 
@@ -272,19 +273,43 @@ class Account extends StatelessWidget {
 
             AccountDetailsContainer(
                 title: localizations?.followUs ?? 'Follow Us',
+                hideTrailingIcon: true,
+                itemPadding: EdgeInsets.symmetric(vertical: 15.h),
                 list: [
-                  AccountDetailsModal(customIcon: Image.asset(ImgConstant.youtube,height: 24.h,width: 24.w,color: Colors.white,), title: localizations?.translate('youtube') ?? 'Youtube', onTap: () {
-                    _launchURL('');
-                  }),
-                  AccountDetailsModal(customIcon: Image.asset(ImgConstant.instagram,height: 24.h,width: 24.w,color: Colors.white,),
-                      title: localizations?.translate('instagram') ?? 'Instagram', onTap: () {
-                    _launchURL('');
-                  }),
-
-                  AccountDetailsModal(customIcon: Image.asset(ImgConstant.twitter,height: 24.h,width: 24.w,color: Colors.white,),
-                      title: localizations?.translate('twitter') ?? 'X', onTap: () {
-                    _launchURL('');
-                  }),
+                  AccountDetailsModal(
+                    customIcon: Image.asset(ImgConstant.youtube,height: 24.h,width: 24.w,), 
+                    title: localizations?.translate('youtube') ?? 'Youtube', 
+                    useMask: false,
+                    onTap: () {
+                      _launchURL('https://www.youtube.com/@edugarcia_trainer/featured');
+                    }
+                  ),
+                  AccountDetailsModal(
+                    customIcon: Image.asset(ImgConstant.instagram,height: 24.h,width: 24.w,),
+                    title: localizations?.translate('instagram') ?? 'Instagram', 
+                    useMask: false,
+                    onTap: () {
+                      _launchURL('https://www.instagram.com/edugarcia_trainer/');
+                    }
+                  ),
+                  AccountDetailsModal(
+                    icon: Icons.facebook, 
+                    iconColor: const Color(0xFF1877F2),
+                    title: 'Facebook', 
+                    useMask: false,
+                    onTap: () {
+                      _launchURL('https://www.facebook.com/people/Edu-Garcia/61555837111324/#');
+                    }
+                  ),
+                  AccountDetailsModal(
+                    icon: Icons.music_note, 
+                    iconColor: Colors.black,
+                    title: 'TikTok', 
+                    useMask: false,
+                    onTap: () {
+                      _launchURL('https://www.tiktok.com/@edugarcia_trainer');
+                    }
+                  ),
                 ]
             ),
 
@@ -315,75 +340,8 @@ class Account extends StatelessWidget {
                       _showLanguageDialog(context);
                     },
                   ),
-                  // Only show Delete Account and Logout if logged in
+                  // Only show Logout if logged in
                   if(isLoggedIn) ...[
-                    AccountDetailsModal(
-                      icon: Icons.delete_forever,
-                      title: localizations?.deleteAccount ?? 'Delete Account',
-                      onTap: () async {
-                        // Show confirmation dialog
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (dialogContext) => AlertDialog(
-                            title: Text(localizations?.translate('delete_account_title') ?? 'Delete Account'),
-                            content: Text(
-                              localizations?.translate('delete_account_message') ?? 'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(dialogContext, false),
-                                child: Text(localizations?.cancel ?? 'Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(dialogContext, true),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                ),
-                                child: Text(localizations?.delete ?? 'Delete'),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (confirmed == true && context.mounted) {
-                          // Show loading indicator while deleting account
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (context) => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          );
-
-                          // Call delete account API
-                          final result = await Api.instance.deleteAccount();
-
-                          // Close loading indicator
-                          if (context.mounted) {
-                            Navigator.pop(context);
-
-                            result.fold(
-                              (failure) {
-                                // Show error message
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(failure.message ?? localizations?.translate('failed_to_delete') ?? 'Failed to delete account'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              },
-                              (success) {
-                                // Navigate to login
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(builder: (builder) => const Login()),
-                                );
-                              },
-                            );
-                          }
-                        }
-                      },
-                    ),
                     AccountDetailsModal(icon: Icons.logout, title: localizations?.logout ?? 'LogOut', onTap: () async {
                       // Show loading indicator while logging out
                       showDialog(
@@ -400,10 +358,15 @@ class Account extends StatelessWidget {
                       // Close loading indicator
                       if (context.mounted) {
                         Navigator.pop(context);
-                        // Navigate to login
-                        Navigator.pushReplacement(
+                        try {
+                          context.read<AccountCubit>().reset();
+                          context.read<NewHomeCubit>().loadHome();
+                        } catch (_) {}
+                        // Navigate to the first screen of the app (StartingScreen)
+                        Navigator.pushAndRemoveUntil(
                           context,
-                          MaterialPageRoute(builder: (builder) => const Login()),
+                          MaterialPageRoute(builder: (builder) => const StartingScreen()),
+                          (route) => false,
                         );
                       }
                     }),
@@ -467,10 +430,83 @@ class Account extends StatelessWidget {
   }
 
   Future<void> _launchURL(String url) async {
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
-    } else {
-      throw 'Could not launch $url';
+    final uri = Uri.parse(url);
+    try {
+      // Try launching in external application first
+      bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        // Fallback to platform default if external application fails
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      // If everything fails, try one last time with platform default directly
+      try {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } catch (err) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not launch $url')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteAccount(BuildContext context, AppLocalizations? localizations) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizations?.translate('delete_account_title') ?? 'Delete Account'),
+        content: Text(
+          localizations?.translate('delete_account_message') ?? 'Are you sure you want to delete your account? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(localizations?.cancel ?? 'No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(localizations?.delete ?? 'Yes'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final result = await Api.instance.deleteAccount();
+
+      if (context.mounted) {
+        Navigator.pop(context);
+        result.fold(
+          (failure) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(failure.message ?? 'Failed to delete account'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          },
+          (success) {
+            try {
+              context.read<AccountCubit>().reset();
+              context.read<NewHomeCubit>().loadHome();
+            } catch (_) {}
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (builder) => const StartingScreen()),
+              (route) => false,
+            );
+          },
+        );
+      }
     }
   }
 
@@ -494,17 +530,17 @@ class Account extends StatelessWidget {
               _buildLanguageOption(
                 context: context,
                 dialogContext: dialogContext,
-                languageCode: 'en',
-                languageName: 'English',
-                isSelected: currentLanguage == 'en',
+                languageCode: 'es',
+                languageName: 'Español',
+                isSelected: currentLanguage == 'es',
               ),
               SizedBox(height: 10.h),
               _buildLanguageOption(
                 context: context,
                 dialogContext: dialogContext,
-                languageCode: 'es',
-                languageName: 'Español',
-                isSelected: currentLanguage == 'es',
+                languageCode: 'en',
+                languageName: 'English',
+                isSelected: currentLanguage == 'en',
               ),
             ],
           ),
@@ -513,7 +549,7 @@ class Account extends StatelessWidget {
               onPressed: () => Navigator.pop(dialogContext),
               child: Text(
                 AppLocalizations.of(context)?.cancel ?? 'Cancel',
-                style: TextStyle(color: Colors.grey),
+                style: const TextStyle(color: Colors.grey),
               ),
             ),
           ],
@@ -551,10 +587,10 @@ class Account extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 16.w),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+          color: isSelected ? AppColor.primary.withOpacity(0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(8.r),
           border: Border.all(
-            color: isSelected ? Colors.blue : Colors.grey.shade300,
+            color: isSelected ? AppColor.primary : AppColor.secondary,
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -562,14 +598,14 @@ class Account extends StatelessWidget {
           children: [
             Icon(
               isSelected ? Icons.check_circle : Icons.circle_outlined,
-              color: isSelected ? Colors.blue : Colors.grey,
+              color: isSelected ? AppColor.primary : Colors.grey,
               size: 24.sp,
             ),
             SizedBox(width: 12.w),
             Text(
               languageName,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: isSelected ? Colors.blue : Colors.black,
+                    color: isSelected ? AppColor.primary : AppColor.text,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
             ),

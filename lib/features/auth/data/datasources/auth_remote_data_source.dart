@@ -1,43 +1,80 @@
 import 'package:dio/dio.dart';
 import 'package:edu_gym/api/api.dart';
 import 'package:edu_gym/core/error/server_exception.dart';
+import 'package:edu_gym/core/utils/device_util.dart';
 
 abstract interface class AuthRemoteDataSource{
-  Future<String> signUpWithEmailPassword({
-    required String name,
+  Future<Map<String, dynamic>> signUpWithEmailPassword({
     required String email,
-    required String password,});
+    required String password,
+    required String cpassword,
+    required String deviceId,
+  });
 
-  Future<String> loginWithEmailPassword({
+  Future<Map<String, dynamic>> loginWithEmailPassword({
     required String email,
-    required String password,});
+    required String password,
+    required String deviceId,
+  });
 }
 
 class AuthRemoteSourceImpl implements AuthRemoteDataSource{
-  final Api api;
-  AuthRemoteSourceImpl(this.api);
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: Api.baseUrl,
+    headers: {
+      'x-device-type': DeviceUtil.getDeviceType(),
+    },
+  ));
 
   @override
-  Future<String> loginWithEmailPassword({required String email, required String password}) {
-    //Todo do login
-    throw UnimplementedError();
+  Future<Map<String, dynamic>> loginWithEmailPassword({
+    required String email,
+    required String password,
+    required String deviceId,
+  }) async {
+    try {
+      final response = await _dio.post('/auth/sign-in', data: {
+        'email': email,
+        'password': password,
+        'device_id': deviceId,
+      });
+
+      if (response.data['isSuccess']) {
+        return response.data;
+      } else {
+        throw ServerException(msg: response.data['message'] ?? 'Login failed');
+      }
+    } on DioException catch (e) {
+      throw ServerException(msg: e.response?.data['message'] ?? e.message);
+    } catch (e) {
+      throw ServerException(msg: e.toString());
+    }
   }
 
   @override
-  Future<String> signUpWithEmailPassword({required String name, required String email, required String password}) async{
-    // try{
-    //   final response= await api.register(email: email, password: password);
-    //   response.fold((failure){
-    //     throw failure;
-    //   }, (data){
-    //     return data.token;
-    //   });
-    // }
-    // on DioException catch(e){
-    //   throw ServerException(msg: e.message);
-    // }
+  Future<Map<String, dynamic>> signUpWithEmailPassword({
+    required String email,
+    required String password,
+    required String cpassword,
+    required String deviceId,
+  }) async {
+    try {
+      final response = await _dio.post('/auth/sign-up', data: {
+        'email': email,
+        'password': password,
+        'cpassword': cpassword,
+        'device_id': deviceId,
+      });
 
-    return '';
+      if (response.data['isSuccess']) {
+        return response.data;
+      } else {
+        throw ServerException(msg: response.data['message'] ?? 'Sign up failed');
+      }
+    } on DioException catch (e) {
+      throw ServerException(msg: e.response?.data['message'] ?? e.message);
+    } catch (e) {
+      throw ServerException(msg: e.toString());
+    }
   }
-
 }

@@ -3,34 +3,48 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:edu_gym/api/auth_interceptor.dart';
+import 'package:edu_gym/api/socket_service.dart';
 import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/core/error/failure.dart';
 import 'package:edu_gym/modal/module.dart';
+import 'package:edu_gym/modal/module_detail_model.dart';
 import 'package:edu_gym/modal/search_modal.dart';
 import 'package:edu_gym/modal/user_details.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 
 import '../core/error/server_exception.dart';
+import '../core/utils/device_util.dart';
 import '../features/auth/data/models/auth_model.dart';
-import '../features/auth/domain/entities/user.dart';
 import '../modal/lesson.dart';
 
 class Api{
 
   static final _api= Api();
-  final _dio= Dio(
-    BaseOptions(
-      baseUrl: baseUrl
-    )
-  );
+  late final Dio _dio;
+  
+  Api() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        headers: {
+          'x-device-type': DeviceUtil.getDeviceType(),
+        },
+      )
+    );
+    _dio.interceptors.add(AuthInterceptor(_dio));
+    // LogInterceptor removed to stop global response printing
+  }
+
   static const accessTokenKey="Access_Token";
   static const refreshTokenKey="Refresh_Token";
   static const deviceIdKey="Device_Id";
-  static const baseUrl='https://api.edugarciamovimiento.com/api/v1';
-  static const imgBaseUrl='https://admin.edugarciamovimiento.com/fitness/uploads';
+  static const baseUrl='https://api.edumovimiento.com/api/v1';
+  static const imgBaseUrl='https://res.cloudinary.com/zft8bss0/image/upload';
 
   static Api get instance =>_api;
 
@@ -50,42 +64,76 @@ class Api{
   Future<void> logout() async {
     try {
       final deviceId = await _getOrCreateDeviceId();
+      final rawCookie = await TokenApi.getCookie();
       final accessToken = await TokenApi().getAccessToken();
+      final cookieHeader = TokenApi.formatCookieHeader(rawCookie);
 
-      // Only call logout API if we have a valid token
-      if (accessToken != null && accessToken.isNotEmpty) {
-        final data = jsonEncode({
-          'device_id': deviceId,
-        });
+      // print('🚪 ==================== LOGOUT ====================');
+      // print('📱 [Logout] Device ID: $deviceId');
+      // print('🍪 [Logout] Raw Stored Cookie: $rawCookie');
+      // print('🍪 [Logout] Formatted Cookie header being sent: "$cookieHeader"');
+      // print('🔑 [Logout] Access Token present: ${accessToken != null && accessToken.isNotEmpty}');
 
-        var headers = {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        };
+      final cleanCookieValue = (rawCookie != null && rawCookie.isNotEmpty)
+          ? (rawCookie.contains('XXAFIT=')
+              ? rawCookie.split('XXAFIT=').last.split(';').first
+              : rawCookie)
+          : null;
 
-        var response = await _dio.request(
-          '$baseUrl/logout',
-          options: Options(
-            method: 'POST',
-            headers: headers,
-            validateStatus: (_) => true, // Accept all status codes, handle errors gracefully
-          ),
-          data: data,
-        );
+      final data = {
+        'device_id': deviceId,
+        if (cleanCookieValue != null && cleanCookieValue.isNotEmpty) ...{
+          'cookie': cleanCookieValue,
+          'XXAFIT': cleanCookieValue,
+          'refreshToken': cleanCookieValue,
+        },
+      };
 
-        // Check if logout was successful (optional - we proceed with local cleanup regardless)
-        if (response.statusCode == 200) {
-          // Logout successful
-        }
-        // If 401 or other error, we'll still clear local data below
+      var headers = {
+        'Content-Type': 'application/json',
+        if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
+        if (cleanCookieValue != null && cleanCookieValue.isNotEmpty) 'x-cookie': cleanCookieValue,
+        if (accessToken != null && accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+
+      // print('📤 [Logout] Headers: $headers');
+      // print('📤 [Logout] Body: $data');
+
+      var response = await _dio.request(
+        '$baseUrl/logout',
+        options: Options(
+          method: 'POST',
+          headers: headers,
+          validateStatus: (_) => true, // Accept all status codes, handle errors gracefully
+        ),
+        data: data,
+      );
+
+      // print('📥 [Logout] Response Status: ${response.statusCode}');
+      // print('📥 [Logout] Response Data: ${response.data}');
+      // print('🚪 ================================================');
+
+      // Check if logout was successful (optional - we proceed with local cleanup regardless)
+      if (response.statusCode == 204 || response.statusCode == 200) {
+        // print('✅ [Logout] Server logout successful (${response.statusCode})');
+      } else {
+        // print('⚠️ [Logout] Server returned status ${response.statusCode}');
       }
     } catch (e) {
+      // print('❌ [Logout] Exception during logout request: $e');
       // Silently handle any network errors - we'll clear local data regardless
     }
 
-    // Clear local tokens and cookies regardless of API response
-    await deleteToken();
+    // Disconnect socket
+    try {
+      SocketService().disconnect();
+    } catch (_) {}
+
+    // Clear local tokens, secure storage and shared preferences (preserving only device_id)
     await TokenApi().deleteCookie();
+    await TokenApi.clearPreferencesExceptDeviceId();
+    // print('🧹 [Logout] Local session & tokens cleared');
   }
 
   Future<Either<Failure, bool>> deleteAccount() async {
@@ -93,12 +141,13 @@ class Api{
       final accessToken = await TokenApi().getAccessToken();
 
       if (accessToken == null || accessToken.isEmpty) {
-        print('Access token is null or empty - user needs to login again');
+        // print('Access token is null or empty - user needs to login again');
         return left(Failure('Authentication failed. Please login again.'));
       }
 
       var headers = {
         'Authorization': 'Bearer $accessToken',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       var response = await _dio.request(
@@ -110,19 +159,24 @@ class Api{
       );
 
       if (response.statusCode == 200) {
-        // Clear local tokens and cookies after successful deletion
-        await deleteToken();
+        // Disconnect socket
+        try {
+          SocketService().disconnect();
+        } catch (_) {}
+
+        // Clear local tokens, secure storage and shared preferences (preserving only device_id)
         await TokenApi().deleteCookie();
+        await TokenApi.clearPreferencesExceptDeviceId();
         return right(true);
       } else {
         throw ServerException(
-          msg: response.data['message'] ?? 'Failed to delete account',
+          msg: response.data['message'] ?? '',
           statusCode: response.statusCode,
           response: response.data,
         );
       }
     } on DioException catch (e) {
-      return left(Failure(e.response?.data['message'] ?? e.message ?? 'Failed to delete account'));
+      return left(Failure(e.response?.data['message'] ?? e.message ?? ''));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
     }
@@ -138,12 +192,13 @@ class Api{
       final accessToken = await TokenApi().getAccessToken();
 
       if (accessToken == null || accessToken.isEmpty) {
-        return left(Failure('Authentication failed. Please login again.'));
+        return left(Failure(''));
       }
 
       var headers = {
         'Authorization': 'Bearer $accessToken',
         'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       final data = jsonEncode({
@@ -153,7 +208,7 @@ class Api{
         "avatar_url": avatarUrl,
       });
 
-      print('📡 Making Update Profile API call to: $baseUrl/profile/details');
+      // print('📡 Making Update Profile API call to: $baseUrl/profile/details');
 
       var response = await _dio.request(
         '$baseUrl/profile/details',
@@ -161,7 +216,6 @@ class Api{
           method: 'PUT',
           headers: headers,
         ),
-        queryParameters: {'device_id': deviceId},
         data: data,
       );
 
@@ -169,44 +223,48 @@ class Api{
         return right(response.data);
       } else {
         throw ServerException(
-          msg: response.data['message'] ?? 'Failed to update profile',
+          msg: response.data['message'] ?? '',
           statusCode: response.statusCode,
           response: response.data,
         );
       }
     } on DioException catch (e) {
-      return left(Failure(e.response?.data['message'] ?? e.message ?? 'Failed to update profile'));
+      return left(Failure(e.response?.data['message'] ?? e.message ?? ''));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
     } catch (e) {
-      return left(Failure(e.toString()));
+      return left(Failure(''));
     }
   }
 
   Future<Either<Failure, Map<String, dynamic>>> getConnectedDevices() async {
     try {
-      print('📡 Making Connected Devices API call to: $baseUrl/devices/connected-device');
+      final deviceId = await DeviceUtil.getDeviceId();
+      final data = jsonEncode({
+        "device_id": deviceId,
+      });
 
       final response = await _hitApi(
         route: '/devices/connected-device',
-        method: 'GET',
+        method: 'POST',
+        data: data,
       );
 
       if (response.statusCode == 200) {
         return right(response.data);
       } else {
         throw ServerException(
-          msg: response.data['message'] ?? 'Failed to get connected devices',
+          msg: response.data['message'] ?? '',
           statusCode: response.statusCode,
           response: response.data,
         );
       }
     } on DioException catch (e) {
-      return left(Failure(e.response?.data['message'] ?? e.message ?? 'Failed to get connected devices'));
+      return left(Failure(e.response?.data['message'] ?? e.message ?? ''));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
     } catch (e) {
-      return left(Failure(e.toString()));
+      return left(Failure(''));
     }
   }
 
@@ -221,7 +279,7 @@ class Api{
         "device_id": deviceIdToRemove,
       });
 
-      print('📡 Making Remove Device API call to: $baseUrl/devices/remove-device');
+      // print('📡 Making Remove Device API call to: $baseUrl/devices/remove-device');
 
       final response = await _hitApi(
         route: '/devices/remove-device',
@@ -233,25 +291,22 @@ class Api{
         return right(response.data);
       } else {
         throw ServerException(
-          msg: response.data['message'] ?? 'Failed to remove device',
+          msg: response.data['message'] ?? '',
           statusCode: response.statusCode,
           response: response.data,
         );
       }
     } on DioException catch (e) {
-      return left(Failure(e.response?.data['message'] ?? e.message ?? 'Failed to remove device'));
+      return left(Failure(e.response?.data['message'] ?? e.message ?? ''));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
     } catch (e) {
-      return left(Failure(e.toString()));
+      return left(Failure(''));
     }
   }
 
   Future<void> deleteToken() async {
-    final prefs= await SharedPreferences.getInstance();
-    prefs.remove(Api.accessTokenKey);
-    prefs.remove(Api.refreshTokenKey);
-    UserDetails.isLoggedIn=false;
+    await TokenApi.clearPreferencesExceptDeviceId();
   }
 
   Future<String?> get _refreshToken async {
@@ -270,26 +325,11 @@ class Api{
   }
 
   Future<String> _getOrCreateDeviceId() async {
-    final prefs = await SharedPreferences.getInstance();
-    String? deviceId = prefs.getString(deviceIdKey);
-
-    // Validate existing device ID length (must be 9-12 characters)
-    if (deviceId == null || deviceId.isEmpty || deviceId.length < 9 || deviceId.length > 12) {
-      deviceId = _generateDeviceId();
-      await prefs.setString(deviceIdKey, deviceId);
-    }
-
-    return deviceId;
+    return await DeviceUtil.getDeviceId();
   }
 
   String _generateDeviceId() {
-    final random = Random.secure();
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-
-    // Generate device ID with length between 9 and 12
-    final length = 9 + random.nextInt(4); // Random length: 9, 10, 11, or 12
-
-    return List.generate(length, (_) => chars[random.nextInt(chars.length)]).join();
+    return DeviceUtil.generateDeviceId();
   }
 
   Future<String> _getDeviceName() async {
@@ -349,17 +389,16 @@ class Api{
 
     try{
       final deviceId = await _getOrCreateDeviceId();
-      final deviceName = await _getDeviceName();
 
       final data = jsonEncode({
         'email': email,
         'password': password,
         'device_id': deviceId,
-        'device_name': deviceName,
       });
 
       var headers = {
         'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       var response = await _dio.request(
@@ -371,32 +410,48 @@ class Api{
         data: data,
       );
 
+      // print('login response => ${response.data}');
+
       if (response.statusCode == 200) {
         final authModel = AuthModel.fromJson(response.data);
         if(authModel.token!=null) {
 
           final setCookie = response.headers['set-cookie'];
-          if (setCookie != null && setCookie.isNotEmpty) {
-            final fullCookie = setCookie.first;
-            // The cookie might contain more than just the key=value (e.g., ; Path=/; HttpOnly)
-            // But for the refresh call, we often just need the first part or the whole thing
-            final cookieKeyValue = fullCookie.split(';').first;
-            print('🍪 Cookie extracted: $cookieKeyValue');
-            await TokenApi().saveTokens(accessToken: authModel.token!, cookie: cookieKeyValue, email: email);
-          }
+          // print('🍪 [Login] Set-Cookie headers: $setCookie');
+          final cookieKeyValue = TokenApi.extractCookieValue(setCookie, 'XXAFIT');
+          // print('🍪 [Login] Extracted XXAFIT Cookie: $cookieKeyValue');
+
+          final dataObj = response.data['data'];
+          final reasonCode = dataObj?['reasonCode'] ?? 1;
+          final userJson = dataObj?['user'];
+
+          await TokenApi().saveAuthData(
+            accessToken: authModel.token!, 
+            cookie: cookieKeyValue, 
+            reasonCode: reasonCode,
+            userJson: userJson ?? {},
+          );
+          
+          // Initialize Socket with deviceId
+          final deviceId = await _getOrCreateDeviceId();
+          SocketService().initSocket(deviceId);
         }
         return right(authModel);
       } else {
         throw ServerException(
-          msg: response.statusMessage,
+          msg: response.statusMessage ?? '',
           statusCode: response.statusCode,
           response: response.data
         );
       }
     }
-    on DioException catch(e){
+    on DioException catch (e) {
+      String? msg;
+      if (e.response?.data is Map) {
+        msg = e.response?.data['message'];
+      }
       return left(ServerException(
-        msg: e.message,
+        msg: msg ?? e.message ?? '',
         response: e.response?.data
       ));
     }
@@ -414,22 +469,21 @@ class Api{
 
     try{
       final deviceId = await _getOrCreateDeviceId();
-      final deviceName = await _getDeviceName();
 
       final data = jsonEncode({
         'email': email,
         'password': password,
         'cpassword': confirmPassword,
         'device_id': deviceId,
-        'device_name': deviceName,
       });
 
       var headers = {
         'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       var response = await _dio.request(
-        '$baseUrl/auth/sign-up',
+        '/auth/sign-up',
         options: Options(
           method: 'POST',
           headers: headers,
@@ -437,34 +491,98 @@ class Api{
         data: data,
       );
 
+      // print('📥 Register Response: ${response.data}');
+
       if (response.statusCode == 200) {
         final authModel = AuthModel.fromJson(response.data);
         if(authModel.token!=null) {
           final setCookie = response.headers['set-cookie'];
-          if (setCookie != null && setCookie.isNotEmpty) {
-            final fullCookie = setCookie.first;
-            final cookieKeyValue = fullCookie.split(';').first;
-            print('🍪 Cookie extracted (register): $cookieKeyValue');
-            await TokenApi().saveTokens(accessToken: authModel.token!, cookie: cookieKeyValue, email: email);
-          }
+          // print('🍪 [Register] Set-Cookie headers: $setCookie');
+          final cookieKeyValue = TokenApi.extractCookieValue(setCookie, 'XXAFIT');
+          // print('🍪 [Register] Extracted XXAFIT Cookie: $cookieKeyValue');
+
+          final dataObj = response.data['data'];
+          final reasonCode = dataObj?['reasonCode'] ?? 1;
+          final userJson = dataObj?['user'];
+
+          await TokenApi().saveAuthData(
+            accessToken: authModel.token!, 
+            cookie: cookieKeyValue, 
+            reasonCode: reasonCode,
+            userJson: userJson ?? {},
+          );
+          
+          // Initialize Socket with deviceId
+          final deviceId = await _getOrCreateDeviceId();
+          SocketService().initSocket(deviceId);
         }
         return right(authModel);
       } else {
         throw ServerException(
-          msg: response.statusMessage,
+          msg: response.data?['message'] ?? response.statusMessage ?? '',
           statusCode: response.statusCode,
           response: response.data
         );
       }
     }
-    on DioException catch(e){
+    on DioException catch (e) {
+      String? msg;
+      if (e.response?.data is Map) {
+        msg = e.response?.data['message'];
+      }
       return left(ServerException(
-        msg: e.message,
+        msg: msg ?? e.message ?? '',
         response: e.response?.data
       ));
     }
     on ServerException catch(e){
       return left(e);
+    }
+  }
+
+  Future<Either<Failure, String>> sendVerificationEmail({required String email}) async {
+    try {
+      final data = jsonEncode({
+        'email': email,
+      });
+
+      var headers = {
+        'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+
+      var response = await _dio.request(
+        '$baseUrl/auth/send-verification-email',
+        options: Options(
+          method: 'POST',
+          headers: headers,
+        ),
+        data: data,
+      );
+
+      if (response.statusCode == 200 && response.data['isSuccess'] == true) {
+        final message = response.data['data']?['message']?.toString() ??
+            response.data['message']?.toString() ??
+            'Verification email sent successfully.';
+        return right(message);
+      } else {
+        throw ServerException(
+          msg: response.data['data']?['message']?.toString() ??
+              response.data['message']?.toString() ??
+              'Failed to send verification email',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(
+        e.response?.data?['data']?['message']?.toString() ??
+            e.response?.data?['message']?.toString() ??
+            e.message ??
+            'Failed to send verification email',
+      ));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
     }
   }
 
@@ -476,6 +594,7 @@ class Api{
 
       var headers = {
         'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       var response = await _dio.request(
@@ -488,10 +607,10 @@ class Api{
       );
 
       if (response.statusCode == 200 && response.data['isSuccess'] == true) {
-        final token = response.data['token'];
+        final token = response.data['token']?.toString() ?? '';
 
-        // Store OTP token
-        await TokenApi.saveOtpToken(token);
+        // Store token in reset token value (not access token)
+        await TokenApi.saveResetToken(token);
 
         return right(token);
       } else {
@@ -510,20 +629,21 @@ class Api{
 
   Future<Either<Failure, bool>> verifyOtp({required String otp}) async {
     try {
-      // Get stored OTP token
-      final otpToken = await TokenApi.getOtpToken();
+      // Get stored token from sendOtp (reset token value)
+      final token = await TokenApi.getResetToken();
 
-      if (otpToken == null || otpToken.isEmpty) {
+      if (token == null || token.isEmpty) {
         return left(Failure('No OTP token found. Please request OTP again.'));
       }
 
       final data = jsonEncode({
-        'token': otpToken,
+        'token': token,
         'otp': otp,
       });
 
       var headers = {
         'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       var response = await _dio.request(
@@ -536,12 +656,10 @@ class Api{
       );
 
       if (response.statusCode == 200 && response.data['isSuccess'] == true) {
-        await TokenApi.deleteOtpToken();
-
-        // Save password reset token for the next step
-        final passwordResetToken = response.data['token'];
-        if (passwordResetToken != null && passwordResetToken.isNotEmpty) {
-          await TokenApi.savePasswordResetToken(passwordResetToken);
+        // Store returned token in reset token value (for reset password Bearer token)
+        final verifyToken = response.data['token']?.toString() ?? '';
+        if (verifyToken.isNotEmpty) {
+          await TokenApi.saveResetToken(verifyToken);
         }
 
         return right(true);
@@ -559,23 +677,30 @@ class Api{
     }
   }
 
-  Future<Either<Failure, bool>> resetPassword({required String newPassword}) async {
+  Future<Either<Failure, AuthModel>> resetPassword({
+    required String newPassword,
+    String? confirmPassword,
+  }) async {
     try {
-      // Get stored password reset token (pwdtoken from verifyOtp)
-      final pwdToken = await TokenApi.getPasswordResetToken();
+      // Get stored reset token from verifyOtp
+      final resetToken = await TokenApi.getResetToken();
 
-      if (pwdToken == null || pwdToken.isEmpty) {
+      if (resetToken == null || resetToken.isEmpty) {
         return left(Failure('No reset token found. Please restart the password reset process.'));
       }
 
+      final deviceId = await _getOrCreateDeviceId();
+
       final data = jsonEncode({
         'password': newPassword,
-        'cpassword': newPassword,
+        'cpassword': confirmPassword ?? newPassword,
+        'device_id': deviceId,
       });
 
       var headers = {
-        'Authorization': 'Bearer $pwdToken',
+        'Authorization': 'Bearer $resetToken',
         'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
       };
 
       var response = await _dio.request(
@@ -588,56 +713,206 @@ class Api{
       );
 
       if (response.statusCode == 200 && response.data['isSuccess'] == true) {
-        // Delete password reset token
-        await TokenApi.deletePasswordResetToken();
+        // Extract auth data from response:
+        // {"isSuccess":true,"message":"Successfull!","data":{"user":{...},"accessToken":"...","reasonCode":1}}
+        final authModel = AuthModel.fromJson(response.data);
+        final dataObj = response.data['data'];
+        final accessToken = authModel.token ?? dataObj?['accessToken']?.toString() ?? response.data['token']?.toString() ?? '';
+        final reasonCode = authModel.reasonCode ?? (dataObj?['reasonCode'] != null
+            ? (dataObj['reasonCode'] is int ? dataObj['reasonCode'] : int.tryParse(dataObj['reasonCode'].toString()) ?? 1)
+            : 1);
+        final userJson = dataObj?['user'];
 
-        // Save access token and cookies (user is now logged in)
-        final accessToken = response.data['token'];
-        if (accessToken != null && accessToken.isNotEmpty) {
+        final setCookie = response.headers['set-cookie'];
+        // print('🍪 [ResetPassword/Auth] Set-Cookie headers: $setCookie');
+        final cookieKeyValue = TokenApi.extractCookieValue(setCookie, 'XXAFIT');
+        // print('🍪 [ResetPassword/Auth] Extracted XXAFIT Cookie: $cookieKeyValue');
 
-          final setCookie = response.headers['set-cookie'];
-          if (setCookie != null && setCookie.isNotEmpty) {
-            final fullCookie = setCookie.first;
-            final cookieKeyValue = fullCookie.split(';').first;
-            await TokenApi().saveTokens(
-              accessToken: accessToken,
-              cookie: cookieKeyValue,
-            );
-          }
+        if (accessToken.isNotEmpty) {
+          final Map<String, dynamic> parsedUserJson = userJson is Map<String, dynamic>
+              ? userJson
+              : (userJson is Map ? Map<String, dynamic>.from(userJson) : <String, dynamic>{});
+
+          await TokenApi().saveAuthData(
+            accessToken: accessToken,
+            cookie: cookieKeyValue,
+            reasonCode: reasonCode,
+            userJson: parsedUserJson,
+          );
+
+          // Save in SharedPreferences (same as auth)
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(Api.accessTokenKey, accessToken);
+            await prefs.setString(TokenApi.accessTokenKey, accessToken);
+            await prefs.setString('Device_Id', deviceId);
+            await prefs.setString(TokenApi.reasonCodeKey, reasonCode.toString());
+            if (cookieKeyValue.isNotEmpty) {
+              await prefs.setString(TokenApi.authCookie, cookieKeyValue);
+            }
+            if (parsedUserJson.isNotEmpty) {
+              await prefs.setString(TokenApi.userKey, jsonEncode(parsedUserJson));
+            }
+          } catch (_) {}
+
+          // Initialize Socket with deviceId
+          SocketService().initSocket(deviceId);
         }
 
-        return right(true);
+        // Set reset token value to null after reset password is done
+        await TokenApi.deleteResetToken();
+
+        return right(authModel);
       } else {
+        AuthInterceptor.checkAndHandleEmailVerification(response.statusCode, response.data, response.statusMessage);
         throw ServerException(
-          msg: response.data['message'] ?? 'Failed to reset password',
+          msg: response.data?['message'] ?? 'Failed to reset password',
           statusCode: response.statusCode,
           response: response.data,
         );
       }
     } on DioException catch (e) {
-      return left(Failure(e.response?.data['message'] ?? e.message ?? 'Failed to reset password'));
+      AuthInterceptor.checkAndHandleEmailVerification(e.response?.statusCode, e.response?.data, e.message);
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to reset password'));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
     }
   }
 
-  Future<String> uploadImage(String filePath) async {
+  Future<Either<Failure, Map<String, dynamic>>> getCloudinarySignature() async {
     try {
-      String url = 'https://api.edugarciamovimiento.com/fitness/uploadImage.php';
+      final response = await _hitApi(
+        route: '/cloudinary/signature',
+        method: 'GET',
+      );
 
-      FormData formData = FormData.fromMap({
-        'fileToUpload': await MultipartFile.fromFile(filePath, filename: 'upload.jpg'),
-      });
-      final response = await _dio.post(url, data: formData);
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.data);
-        return json['isSuccess'] ? json['image'] : '';
+      if (response.statusCode == 200 && response.data != null) {
+        if (response.data['isSuccess'] == true && response.data['data'] != null) {
+          return right(Map<String, dynamic>.from(response.data['data']));
+        } else {
+          return left(Failure(
+            response.data['message'] ?? response.data['msg'] ?? 'Failed to get Cloudinary signature',
+          ));
+        }
+      } else {
+        throw ServerException(
+          msg: response.data?['message'] ?? 'Failed to get Cloudinary signature',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
       }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to get Cloudinary signature'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
     } catch (e) {
-      print('Error during image upload: $e');
+      return left(Failure(e.toString()));
     }
-    return '';
+  }
+
+  Future<Either<Failure, String>> uploadImageToCloudinary(String filePath) async {
+    try {
+      final sigResult = await getCloudinarySignature();
+      return await sigResult.fold(
+        (failure) => left(failure),
+        (sigData) async {
+          final cloudName = sigData['cloud_name']?.toString() ?? '';
+          final apiKey = sigData['api_key']?.toString() ?? '';
+          final timestamp = sigData['timestamp']?.toString() ?? '';
+          final signature = sigData['signature']?.toString() ?? '';
+          final folder = sigData['folder']?.toString();
+
+          if (cloudName.isEmpty || apiKey.isEmpty || signature.isEmpty || timestamp.isEmpty) {
+            return left(Failure('Invalid Cloudinary signature data'));
+          }
+
+          final fileName = filePath.contains(Platform.pathSeparator)
+              ? filePath.split(Platform.pathSeparator).last
+              : (filePath.contains('/') ? filePath.split('/').last : 'upload.jpg');
+
+          final formDataMap = <String, dynamic>{
+            'file': await MultipartFile.fromFile(filePath, filename: fileName.isNotEmpty ? fileName : 'upload.jpg'),
+            'api_key': apiKey,
+            'timestamp': timestamp,
+            'signature': signature,
+          };
+          if (folder != null && folder.isNotEmpty) {
+            formDataMap['folder'] = folder;
+          }
+
+          final formData = FormData.fromMap(formDataMap);
+
+          final cloudinaryDio = Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 30),
+              receiveTimeout: const Duration(seconds: 30),
+            ),
+          );
+          final uploadUrl = 'https://api.cloudinary.com/v1_1/$cloudName/image/upload';
+
+          final uploadResponse = await cloudinaryDio.post(
+            uploadUrl,
+            data: formData,
+          );
+
+          if (uploadResponse.statusCode == 200 && uploadResponse.data != null) {
+            final data = uploadResponse.data is String ? jsonDecode(uploadResponse.data) : uploadResponse.data;
+            final uploadedUrl = (data['secure_url'] ?? data['url'])?.toString() ?? '';
+            if (uploadedUrl.isNotEmpty) {
+              final relativePath = extractCloudinaryRelativePath(uploadedUrl);
+              return right(relativePath);
+            }
+            return left(Failure('Failed to retrieve image URL from Cloudinary response'));
+          } else {
+            return left(Failure(uploadResponse.statusMessage ?? 'Cloudinary upload failed'));
+          }
+        },
+      );
+    } on DioException catch (e) {
+      final errorMsg = e.response?.data?['error']?['message'] ?? e.response?.data?['message'] ?? e.message ?? 'Image upload failed';
+      return left(Failure(errorMsg.toString()));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  static String extractCloudinaryRelativePath(String url) {
+    if (url.isEmpty) return '';
+    final regExp = RegExp(r'upload\/?(.+)$');
+    final match = regExp.firstMatch(url);
+    if (match != null && match.group(1) != null) {
+      String path = match.group(1)!;
+      if (path.startsWith('/')) {
+        path = path.substring(1);
+      }
+      return path;
+    }
+    return url;
+  }
+
+  static String getFullImageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    final base = imgBaseUrl.endsWith('/')
+        ? imgBaseUrl.substring(0, imgBaseUrl.length - 1)
+        : imgBaseUrl;
+    return '$base/$cleanPath';
+  }
+
+  Future<String> uploadImage(String filePath) async {
+    final result = await uploadImageToCloudinary(filePath);
+    return result.fold(
+      (failure) {
+        // print('Error during image upload: ${failure.message}');
+        return '';
+      },
+      (imageUrl) => imageUrl,
+    );
   }
 
   // New DramaBox API method
@@ -649,11 +924,11 @@ class Api{
     try {
       final accessToken = await TokenApi().getAccessToken();
 
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {
-          'Authorization': 'Bearer $accessToken',
-        };
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var queryParameters = <String, dynamic>{};
@@ -671,8 +946,10 @@ class Api{
       );
 
       if (response.statusCode == 200) {
+        // print('🏠 [HOME PAGE API RESPONSE]: ${jsonEncode(response.data)}');
         return right(response.data);
       } else {
+        // print('❌ [HOME PAGE API ERROR]: ${response.statusCode} - ${response.statusMessage}');
         throw ServerException(
           msg: response.statusMessage,
           statusCode: response.statusCode,
@@ -690,15 +967,17 @@ class Api{
 
   Future<Either<Failure, Map<String, dynamic>>> getNavPillData({
     required int navPillId,
-    int limit = 2,
+    int limit = 10,
     String? cursor,
     int? categoryId,
   }) async {
     try {
       final accessToken = await TokenApi().getAccessToken();
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {'Authorization': 'Bearer $accessToken'};
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var queryParameters = <String, dynamic>{'limit': limit.toString()};
@@ -740,9 +1019,11 @@ class Api{
   }) async {
     try {
       final accessToken = await TokenApi().getAccessToken();
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {'Authorization': 'Bearer $accessToken'};
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var queryParameters = <String, dynamic>{'limit': limit.toString()};
@@ -759,8 +1040,10 @@ class Api{
       );
 
       if (response.statusCode == 200) {
+        // print('💊 [NAV PILL API RESPONSE]: ${jsonEncode(response.data)}');
         return right(response.data);
       } else {
+        // print('❌ [NAV PILL API ERROR]: ${response.statusCode} - ${response.statusMessage}');
         throw ServerException(
           msg: response.statusMessage,
           statusCode: response.statusCode,
@@ -778,21 +1061,23 @@ class Api{
 
   Future<Either<Failure, Map<String, dynamic>>> searchModules({
     required String term,
-    int limit = 10,
-    String? cursor,
+    String limit = '',
+    String cursor = '',
   }) async {
     try {
       final accessToken = await TokenApi().getAccessToken();
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {'Authorization': 'Bearer $accessToken'};
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var queryParameters = <String, dynamic>{
         'term': term,
-        'limit': limit.toString(),
+        'limit': limit,
+        'cursor': cursor,
       };
-      if (cursor != null && cursor.isNotEmpty) queryParameters['cursor'] = cursor;
 
       var response = await _dio.request(
         '$baseUrl/users/search',
@@ -804,12 +1089,14 @@ class Api{
       );
 
       if (response.statusCode == 200) {
+        // print('🔍 [SEARCH PAGE API RESPONSE]: ${jsonEncode(response.data)}');
         return right(response.data);
       } else {
+        // print('❌ [SEARCH PAGE API ERROR]: ${response.statusCode} - ${response.statusMessage}');
         throw ServerException(
           msg: response.statusMessage,
           statusCode: response.statusCode,
-          response: response.data,
+          response: response.data
         );
       }
     } on DioException catch (e) {
@@ -827,9 +1114,11 @@ class Api{
   }) async {
     try {
       final accessToken = await TokenApi().getAccessToken();
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {'Authorization': 'Bearer $accessToken'};
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var response = await _dio.request(
@@ -841,12 +1130,14 @@ class Api{
       );
 
       if (response.statusCode == 200) {
+        // print('🎬 [LESSON VIDEO API RESPONSE]: ${jsonEncode(response.data)}');
         return right(response.data);
       } else {
+        // print('❌ [LESSON VIDEO API ERROR]: ${response.statusCode} - ${response.statusMessage}');
         throw ServerException(
           msg: response.statusMessage,
           statusCode: response.statusCode,
-          response: response.data,
+          response: response.data
         );
       }
     } on DioException catch (e) {
@@ -866,9 +1157,11 @@ class Api{
   }) async {
     try {
       final accessToken = await TokenApi().getAccessToken();
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {'Authorization': 'Bearer $accessToken'};
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var queryParameters = <String, dynamic>{'limit': limit.toString()};
@@ -885,8 +1178,56 @@ class Api{
       );
 
       if (response.statusCode == 200) {
+        // print('📚 [MODULE LESSONS API RESPONSE]: ${jsonEncode(response.data)}');
         return right(response.data);
       } else {
+        // print('❌ [MODULE LESSONS API ERROR]: ${response.statusCode} - ${response.statusMessage} - ${response.data}');
+        throw ServerException(
+          msg: response.statusMessage,
+          statusCode: response.statusCode,
+          response: response.data
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.message));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, ModuleDetailModel>> getModuleDetails({
+    required int moduleId,
+  }) async {
+    try {
+      final accessToken = await TokenApi().getAccessToken();
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+
+      var response = await _dio.request(
+        '$baseUrl/users/modules/$moduleId',
+        options: Options(
+          method: 'GET',
+          headers: headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        // print('📦 [MODULE DETAILS API RESPONSE]: ${jsonEncode(response.data)}');
+        final data = response.data;
+        if (data != null && (data['isSuccess'] == true || data['isSuccess'] == null)) {
+          final moduleDetail = ModuleDetailModel.fromJson(data['data'] ?? data);
+          return right(moduleDetail);
+        } else {
+          return left(Failure(data?['message'] ?? 'Failed to load module details'));
+        }
+      } else {
+        // print('❌ [MODULE DETAILS API ERROR]: ${response.statusCode} - ${response.statusMessage}');
         throw ServerException(
           msg: response.statusMessage,
           statusCode: response.statusCode,
@@ -894,7 +1235,51 @@ class Api{
         );
       }
     } on DioException catch (e) {
-      return left(Failure(e.message));
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to load module details'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, String>> generateWebLink() async {
+    try {
+      final deviceId = await DeviceUtil.getDeviceId();
+
+      final response = await _hitApi(
+        route: '/weblink/send-access-steps/$deviceId',
+        method: 'GET',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final bool isSuccess = response.data['isSuccess'] == true ||
+            response.data['isSuccess'] == 1 ||
+            response.data['isSuccess'] == 'true' ||
+            response.data['status'] == true ||
+            response.data['status'] == 'success';
+
+        if (isSuccess) {
+          final message = response.data['message'] ??
+              response.data['msg'] ??
+              'Access steps sent to your email successfully.';
+          return right(message.toString());
+        } else {
+          return left(Failure(
+            response.data['message'] ??
+                response.data['msg'] ??
+                'Failed to send access steps email',
+          ));
+        }
+      } else {
+        throw ServerException(
+          msg: response.data?['message'] ?? 'Failed to send access steps email',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to send access steps email'));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
     } catch (e) {
@@ -912,17 +1297,17 @@ class Api{
     try {
       final accessToken = await TokenApi().getAccessToken();
 
-      Map<String, dynamic>? headers;
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
       if (accessToken != null && accessToken.isNotEmpty) {
-        headers = {
-          'Authorization': 'Bearer $accessToken',
-        };
+        headers['Authorization'] = 'Bearer $accessToken';
       }
 
       var queryParameters = <String, dynamic>{
         'cursor': cursor,
         'limit': limit.toString(),
-        'filter_id': filterId.toString(),
+        'category_id': filterId.toString(),
       };
 
       var response = await _dio.request(
@@ -987,11 +1372,13 @@ class Api{
 
       Map<String,dynamic> json= response.data;
 
-      if(json['isSuccess']){
+      if(json['isSuccess'] == true){
+        // print('📦 [MODULE DETAILS API RESPONSE]: ${jsonEncode(json)}');
         final module=Module.fromJson(json['data']);
         return right(module);
       }
       else{
+        // print('❌ [MODULE DETAILS API ERROR]: ${json['message'] ?? 'Failed to load module'}');
         return left(Failure('Failed to load module'));
       }
 
@@ -1014,11 +1401,13 @@ class Api{
           }
       );
       Map<String,dynamic> json= response.data;
-      if(json['isSuccess']){
+      if(json['isSuccess'] == true){
+        // print('📖 [LESSON BY ID API RESPONSE]: ${jsonEncode(json)}');
         final lesson=Lesson.fromJson(json['data']);
         return right(lesson);
       }
       else{
+        // print('❌ [LESSON BY ID API ERROR]: ${json['message'] ?? 'Failed to load lesson'}');
         return left(Failure());
       }
     }
@@ -1071,7 +1460,14 @@ class Api{
 
       Map<String,dynamic> json = response.data;
       if (json['isSuccess']) {
-        return right(UserDetails.fromJson(json['data']));
+        // Handle nested structure: check for 'user' key first
+        final userJson = json['data']?['user'] ?? json['data'];
+        final details = UserDetails.fromJson(userJson);
+        // Store and merge user details
+        await TokenApi().saveUserData(details);
+        
+        // Return the MERGED details from TokenApi.user
+        return right(TokenApi.user ?? details);
       } else {
         throw ServerException(
           msg: json['message'] ?? 'Failed to get user details',
@@ -1128,19 +1524,393 @@ class Api{
     }
   }
 
+  /// Get user's subscriptions from /payments/subscriptions
+  Future<Either<Failure, Map<String, dynamic>>> getSubscriptions() async {
+    try {
+      final response = await _hitApi(
+        route: '/payments/subscriptions',
+        method: 'GET',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        Map<String, dynamic> responseData;
+        if (response.data is Map<String, dynamic>) {
+          responseData = response.data;
+        } else if (response.data is Map) {
+          responseData = Map<String, dynamic>.from(response.data);
+        } else if (response.data is String) {
+          responseData = jsonDecode(response.data);
+        } else {
+          responseData = {};
+        }
+        return right(responseData);
+      } else {
+        throw ServerException(
+          msg: response.data?['message'] ?? 'Failed to get subscriptions',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to get subscriptions'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> getLatestSubscription() async {
+    try {
+      // 1. Try /payments/subscriptions first
+      try {
+        final subResponse = await _hitApi(
+          route: '/payments/subscriptions',
+          method: 'GET',
+        );
+
+        if (subResponse.statusCode == 200 && subResponse.data != null) {
+          final resData = subResponse.data;
+          final dynamic listData = resData['data'];
+          if (listData is List && listData.isNotEmpty) {
+            // Find active subscription or first item
+            final activeSub = listData.firstWhere(
+              (item) => item is Map && (item['status'] == 'active' || item['status'] == 'trialing'),
+              orElse: () => listData.first,
+            );
+
+            final Map<String, dynamic> mergedSub = activeSub is Map
+                ? Map<String, dynamic>.from(activeSub)
+                : <String, dynamic>{};
+            final maxDev = resData['max_devices'] ??
+                (resData['data'] is Map ? resData['data']['max_devices'] : null) ??
+                resData['maxDevices'] ??
+                mergedSub['max_devices'] ??
+                mergedSub['maxDevices'];
+            if (maxDev != null) {
+              mergedSub['max_devices'] = maxDev;
+            }
+
+            return right({
+              'isSuccess': true,
+              'data': {
+                'subscription': mergedSub,
+              },
+              'max_devices': maxDev,
+              'raw': resData,
+            });
+          }
+        }
+      } catch (_) {
+        // Fallback to /users/latest-subscription
+      }
+
+      // 2. Fallback to /users/latest-subscription
+      final response = await _hitApi(
+        route: '/users/latest-subscription',
+        method: 'GET',
+      );
+
+      if (response.statusCode == 200) {
+        final resData = response.data;
+        if (resData is Map) {
+          final maxDev = resData['max_devices'] ??
+              (resData['data'] is Map ? resData['data']['max_devices'] : null) ??
+              resData['maxDevices'];
+          if (maxDev != null && resData['data'] is Map && resData['data']['subscription'] is Map) {
+            resData['data']['subscription']['max_devices'] ??= maxDev;
+          }
+        }
+        return right(response.data);
+      } else {
+        throw ServerException(
+          msg: response.data['message'] ?? 'Failed to get latest subscription',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data['message'] ?? e.message ?? 'Failed to get latest subscription'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  /// Check subscription status by checkout session_id
+  /// Endpoint: /payments/subscription-status?session_id=...
+  Future<Either<Failure, Map<String, dynamic>>> getSubscriptionStatus({required String sessionId}) async {
+    try {
+      Response response;
+      try {
+        response = await _hitApi(
+          route: '/payments/subscription-status',
+          method: 'GET',
+          queryParameters: {'session_id': sessionId},
+        );
+      } catch (e) {
+        if (e is ServerException && e.statusCode == 404) {
+          response = await _hitApi(
+            route: '/payments/subscriptions-status',
+            method: 'GET',
+            queryParameters: {'session_id': sessionId},
+          );
+        } else {
+          rethrow;
+        }
+      }
+
+      if (response.statusCode == 200 && response.data != null) {
+        Map<String, dynamic> responseData;
+        if (response.data is Map<String, dynamic>) {
+          responseData = response.data;
+        } else if (response.data is Map) {
+          responseData = Map<String, dynamic>.from(response.data);
+        } else if (response.data is String) {
+          responseData = jsonDecode(response.data);
+        } else {
+          responseData = {};
+        }
+        return right(responseData);
+      } else {
+        throw ServerException(
+          msg: response.data?['message'] ?? 'Failed to get subscription status',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to get subscription status'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  /// Cancel subscription by subs_id
+  /// Endpoint: /payments/subscription-cancel
+  /// Body: { subs_id: "subs_value" }
+  Future<Either<Failure, Map<String, dynamic>>> cancelSubscription({required String subsId}) async {
+    try {
+      final response = await _hitApi(
+        route: '/payments/subscription-cancel',
+        method: 'POST',
+        data: jsonEncode({'subs_id': subsId}),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        Map<String, dynamic> responseData;
+        if (response.data is Map<String, dynamic>) {
+          responseData = response.data;
+        } else if (response.data is Map) {
+          responseData = Map<String, dynamic>.from(response.data);
+        } else if (response.data is String) {
+          responseData = jsonDecode(response.data);
+        } else {
+          responseData = {};
+        }
+        return right(responseData);
+      } else {
+        throw ServerException(
+          msg: response.data?['message'] ?? 'Failed to cancel subscription',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to cancel subscription'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> getContinueWatching({
+    int limit = 5,
+    dynamic cursor,
+  }) async {
+    try {
+      final accessToken = await TokenApi().getAccessToken();
+      final cookie = await TokenApi.getCookie();
+      Map<String, dynamic> headers = {
+        'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+      if (cookie != null && cookie.isNotEmpty) {
+        headers['Cookie'] = cookie;
+      }
+
+      var queryParameters = <String, dynamic>{
+        'limit': limit.toString(),
+      };
+
+      // In the first run, do NOT add cursor. Only add cursor if cursor != null during infinite scroll
+      if (cursor != null &&
+          cursor.toString().trim().isNotEmpty &&
+          cursor.toString().trim().toLowerCase() != 'null') {
+        queryParameters['cursor'] = cursor.toString().trim();
+      }
+
+      // print('📥 [CW TABLE - GET]: $baseUrl/users/continue-watching with params: $queryParameters');
+
+      var response = await _dio.request(
+        '$baseUrl/users/continue-watching',
+        options: Options(
+          method: 'GET',
+          headers: headers,
+        ),
+        queryParameters: queryParameters,
+      );
+
+      if (response.statusCode == 200) {
+        // print('▶️ [CW TABLE - GET RESPONSE]: ${jsonEncode(response.data)}');
+        Map<String, dynamic> responseData;
+        if (response.data is Map) {
+          responseData = Map<String, dynamic>.from(response.data as Map);
+        } else if (response.data is String) {
+          responseData = jsonDecode(response.data as String);
+        } else {
+          responseData = {};
+        }
+        return right(responseData);
+      } else {
+        // print('❌ [CW TABLE - GET ERROR]: ${response.statusCode} - ${response.statusMessage}');
+        throw ServerException(
+          msg: response.statusMessage,
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      // print('❌ [CW TABLE - GET DIO ERROR]: ${e.response?.data ?? e.message}');
+      return left(Failure(e.response?.data?['message'] ?? e.message));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, bool>> updateContinueWatching({
+    required dynamic videoProviderId,
+    required int lastPositionMs,
+    required int totalDurationMs,
+  }) async {
+    try {
+      final accessToken = await TokenApi().getAccessToken();
+      final cookie = await TokenApi.getCookie();
+
+      final parsedId = int.tryParse(videoProviderId.toString());
+      final payload = {
+        'video_provider_id': parsedId ?? videoProviderId,
+        'last_position_ms': lastPositionMs,
+        'total_duration_ms': totalDurationMs,
+      };
+      final data = jsonEncode(payload);
+
+      Map<String, dynamic> headers = {
+        'Content-Type': 'application/json',
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+      if (cookie != null && cookie.isNotEmpty) {
+        headers['Cookie'] = cookie;
+      }
+
+      // print('📤 [CW TABLE - POST]: $baseUrl/users/continue-watching with body: $data');
+
+      final response = await _dio.request(
+        '$baseUrl/users/continue-watching',
+        options: Options(
+          method: 'POST',
+          headers: headers,
+        ),
+        data: data,
+      );
+
+      if (response.statusCode == 200) {
+        // print('⏱️ [CW TABLE - POST RESPONSE]: ${jsonEncode(response.data)}');
+        return right(true);
+      } else {
+        // print('❌ [CW TABLE - POST ERROR]: ${response.statusCode} - ${response.statusMessage}');
+        return left(Failure(response.data?['message'] ?? 'Failed to update progress'));
+      }
+    } on DioException catch (e) {
+      // print('❌ [CW TABLE - POST DIO ERROR]: ${e.response?.data ?? e.message}');
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to update progress'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> getContinueWatchingVideo({
+    required dynamic videoId,
+  }) async {
+    try {
+      final accessToken = await TokenApi().getAccessToken();
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+
+      // print('📥 [CW TABLE - GET VIDEO]: $baseUrl/users/continue-watching/$videoId');
+
+      var response = await _dio.request(
+        '$baseUrl/users/continue-watching/$videoId',
+        options: Options(
+          method: 'GET',
+          headers: headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        // print('▶️ [CW TABLE - GET VIDEO RESPONSE]: ${jsonEncode(response.data)}');
+        return right(response.data);
+      } else {
+        // print('❌ [CW TABLE - GET VIDEO ERROR]: ${response.statusCode} - ${response.statusMessage}');
+        throw ServerException(
+          msg: response.statusMessage,
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.message));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
   Future<Response> _hitApi({required String route, String? data, bool setHeaders=true,
     String method='GET', Map<String,dynamic>? queryParameters}) async {
 
-    Map<String, String>? headers;
+    Map<String, String> headers = {
+      'Content-Type': 'application/json',
+      'x-device-type': DeviceUtil.getDeviceType(),
+    };
 
     if(setHeaders){
       final accessToken = await TokenApi().getAccessToken();
       final cookie = await TokenApi.getCookie();
-      headers = {
-        'Authorization': 'Bearer $accessToken'
-      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
       if (cookie != null && cookie.isNotEmpty) {
-        headers!['Cookie'] = cookie;
+        headers['Cookie'] = cookie;
       }
     }
     try{
@@ -1153,9 +1923,19 @@ class Api{
           )
       );
       if(res.statusCode == 200){
+        // Global error catching for isSuccess: false
+        if (res.data is Map && res.data['isSuccess'] == false) {
+          AuthInterceptor.checkAndHandleEmailVerification(res.statusCode, res.data);
+          throw ServerException(
+              msg: res.data['message'] ?? 'Action failed',
+              statusCode: res.statusCode,
+              response: res.data
+          );
+        }
         return res;
       }
       else{
+        AuthInterceptor.checkAndHandleEmailVerification(res.statusCode, res.data, res.statusMessage);
         throw ServerException(
             msg: res.statusMessage,
             statusCode: res.statusCode,
@@ -1164,6 +1944,7 @@ class Api{
       }
     }
     on DioException catch(e){
+      AuthInterceptor.checkAndHandleEmailVerification(e.response?.statusCode, e.response?.data, e.message);
       throw ServerException(
           msg: e.message,
           response: e.response?.data

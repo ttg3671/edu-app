@@ -1,3 +1,4 @@
+import 'package:edu_gym/features/module/presentation/screens/module_lessons_screen.dart';
 import 'package:edu_gym/features/quality_player/src/quality_player.dart';
 import 'package:edu_gym/features/quality_player/cubit/player_cubit.dart';
 import 'package:edu_gym/modal/lesson.dart';
@@ -7,7 +8,11 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
   final String videoUrl;
   final String lessonTitle;
   final List<VideoFile>? videoFiles;
-  final String? thumbnailUrl; // NEW: Thumbnail for loading state
+  final String? thumbnailUrl; // Thumbnail for loading state
+  final dynamic videoProviderId; // Track continue watching progress
+  final int? totalDuration; // Total duration in seconds from video API
+  final int? moduleId; // Module ID for back navigation
+  final Duration? initialPosition; // Resume position
 
   const LandscapeVideoPlayerScreen({
     super.key,
@@ -15,18 +20,38 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
     required this.lessonTitle,
     this.videoFiles,
     this.thumbnailUrl,
+    this.videoProviderId,
+    this.totalDuration,
+    this.moduleId,
+    this.initialPosition,
   });
+
+  void _handleExit(BuildContext context) {
+    if (moduleId != null && moduleId! > 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ModuleLessonsScreen(
+            moduleId: moduleId!,
+            moduleTitle: lessonTitle,
+          ),
+        ),
+      );
+    } else if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    print('🎬 LandscapeVideoPlayerScreen build');
-    print('📹 Video URL: $videoUrl');
-    print('📦 Video Files count: ${videoFiles?.length ?? 0}');
+    // print('🎬 LandscapeVideoPlayerScreen build');
+    // print('📹 Video URL: $videoUrl');
+    // print('📦 Video Files count: ${videoFiles?.length ?? 0}');
 
     // Convert VideoFile list to VideoQuality list
     List<VideoQuality>? qualities;
     if (videoFiles != null && videoFiles!.isNotEmpty) {
-      print('🎥 Converting ${videoFiles!.length} video files to qualities...');
+      // print('🎥 Converting ${videoFiles!.length} video files to qualities...');
       qualities = videoFiles!.map((videoFile) {
         // Parse quality string to int (e.g., "1080" -> 1080, "hls" -> 0 for auto)
         int qualityValue;
@@ -36,7 +61,7 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
           qualityValue = int.tryParse(videoFile.quality) ?? 720;
         }
 
-        print('  📊 Quality: ${videoFile.quality} ($qualityValue) - Link: ${videoFile.link.substring(0, 50)}...');
+        // print('  📊 Quality: ${videoFile.quality} ($qualityValue) - Link: ${videoFile.link.substring(0, 50)}...');
 
         return VideoQuality(
           quality: qualityValue,
@@ -46,9 +71,9 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
 
       // Sort by quality (highest first)
       qualities.sort((a, b) => b.quality.compareTo(a.quality));
-      print('✅ Converted to ${qualities.length} VideoQuality objects');
+      // print('✅ Converted to ${qualities.length} VideoQuality objects');
     } else {
-      print('⚠️ No video files provided, using default video URL');
+      // print('⚠️ No video files provided, using default video URL');
     }
 
     return Scaffold(
@@ -59,11 +84,10 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
           videoQualities: qualities, // Pass video qualities
           thumbnailUrl: thumbnailUrl, // Pass thumbnail for loading state
           alwaysLandscape: true,
-          onExitIconTap: () {
-            if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
+          videoProviderId: videoProviderId,
+          totalDuration: totalDuration,
+          initialPosition: initialPosition,
+          onExitIconTap: () => _handleExit(context),
         ),
       ),
     );

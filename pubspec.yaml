@@ -36,6 +36,8 @@ dependencies:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
+  # Use the modern, updated Google Cast package:
+  flutter_chrome_cast: ^1.4.6
   cupertino_icons: ^1.0.8
   flutter_screenutil: ^5.9.3
   flutter_bloc: ^8.1.6
@@ -57,6 +59,12 @@ dependencies:
   image_picker: ^1.1.2
   flutter_secure_storage: ^9.2.4
   email_validator: ^3.0.0
+  socket_io_client: ^3.0.2
+  app_links: ^7.0.0
+  flutter_html: ^3.0.0
+  firebase_core: ^4.14.0
+  firebase_messaging: ^16.6.0
+  flutter_local_notifications: ^22.3.0
 
 dev_dependencies:
   flutter_test:

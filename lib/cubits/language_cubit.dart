@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../core/utils/language_manager.dart';
 
 class LanguageCubit extends Cubit<Locale> {
-  LanguageCubit() : super(const Locale('en')) {
+  LanguageCubit() : super(const Locale('es')) {
     loadSavedLanguage();
   }
 

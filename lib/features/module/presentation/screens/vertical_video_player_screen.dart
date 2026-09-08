@@ -1,3 +1,4 @@
+import 'package:edu_gym/features/module/presentation/screens/module_lessons_screen.dart';
 import 'package:edu_gym/features/quality_player/src/quality_player.dart';
 import 'package:edu_gym/features/quality_player/cubit/player_cubit.dart';
 import 'package:edu_gym/modal/lesson.dart';
@@ -8,6 +9,10 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
   final String lessonTitle;
   final List<VideoFile>? videoFiles;
   final String? thumbnailUrl;
+  final dynamic videoProviderId; // Track continue watching progress
+  final int? totalDuration; // Total duration in seconds from video API
+  final int? moduleId; // Module ID for back navigation
+  final Duration? initialPosition; // Resume position
 
   const VerticalVideoPlayerScreen({
     super.key,
@@ -15,7 +20,27 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
     required this.lessonTitle,
     this.videoFiles,
     this.thumbnailUrl,
+    this.videoProviderId,
+    this.totalDuration,
+    this.moduleId,
+    this.initialPosition,
   });
+
+  void _handleExit(BuildContext context) {
+    if (moduleId != null && moduleId! > 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ModuleLessonsScreen(
+            moduleId: moduleId!,
+            moduleTitle: lessonTitle,
+          ),
+        ),
+      );
+    } else if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,11 +73,10 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
           thumbnailUrl: thumbnailUrl,
           alwaysLandscape: false, // For vertical videos
           height: double.infinity, // Full screen height
-          onExitIconTap: () {
-            if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
+          videoProviderId: videoProviderId,
+          totalDuration: totalDuration,
+          initialPosition: initialPosition,
+          onExitIconTap: () => _handleExit(context),
         ),
       ),
     );

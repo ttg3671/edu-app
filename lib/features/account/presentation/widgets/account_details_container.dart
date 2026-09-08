@@ -7,7 +7,15 @@ import '../../../../core/common/widgets/linear_gradient_mask.dart';
 class AccountDetailsContainer extends StatelessWidget {
   final String title;
   final List<AccountDetailsModal> list;
-  const AccountDetailsContainer({super.key, required this.title, required this.list});
+  final bool hideTrailingIcon;
+  final EdgeInsetsGeometry? itemPadding;
+  const AccountDetailsContainer({
+    super.key, 
+    required this.title, 
+    required this.list,
+    this.hideTrailingIcon = false,
+    this.itemPadding,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,23 +31,31 @@ class AccountDetailsContainer extends StatelessWidget {
           SizedBox(height: 10.h,),
 
           ...List.generate(list.length, (index){
+            final item = list[index];
+            Widget iconWidget = item.customIcon ??
+                Icon(item.icon, size: 26.sp, color: item.iconColor ?? Colors.white);
+            
+            if (item.useMask) {
+              iconWidget = LinearGradientMask(child: iconWidget);
+            }
+
             return InkWell(
-              onTap: list[index].onTap,
+              onTap: item.onTap,
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 10.h),
+                padding: itemPadding ?? EdgeInsets.symmetric(vertical: 10.h),
                 child: Row(
                   spacing: 10.w,
                   children: [
-                    LinearGradientMask(child: list[index].customIcon??
-                        Icon(list[index].icon,size: 26.sp,color: Colors.white,)),
+                    iconWidget,
                     Expanded(
-                      child: Text(list[index].title,
+                      child: Text(item.title,
                         style: Theme.of(context).textTheme.bodyMedium!.copyWith(fontSize: 16.sp,),
                         maxLines: 1,
                       ),
                     ),
                     const Spacer(),
-                    Icon(Icons.arrow_forward_ios,size: 26.sp,color: Colors.black54,),
+                    if (!hideTrailingIcon)
+                      Icon(Icons.arrow_forward_ios,size: 26.sp,color: Colors.black54,),
                   ],
                 ),
               ),
@@ -57,6 +73,15 @@ class AccountDetailsModal{
   final String title;
   final VoidCallback onTap;
   final Widget? customIcon;
+  final Color? iconColor;
+  final bool useMask;
 
-  AccountDetailsModal({this.icon, required this.title,required this.onTap,this.customIcon, });
+  AccountDetailsModal({
+    this.icon, 
+    required this.title,
+    required this.onTap,
+    this.customIcon, 
+    this.iconColor,
+    this.useMask = true,
+  });
 }

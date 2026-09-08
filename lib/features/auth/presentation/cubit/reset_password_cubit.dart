@@ -4,22 +4,31 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 class ResetPasswordCubit extends Cubit<ResetPasswordState> {
   ResetPasswordCubit() : super(ResetPasswordInitial());
 
-  Future<void> resetPassword(String newPassword) async {
+  Future<void> resetPassword({
+    required String newPassword,
+    String? confirmPassword,
+  }) async {
     if (newPassword.trim().isEmpty) {
       emit(ResetPasswordFailed('Password cannot be empty'));
       return;
     }
 
     emit(ResetPasswordLoading());
-    final res = await Api.instance.resetPassword(newPassword: newPassword);
+    final res = await Api.instance.resetPassword(
+      newPassword: newPassword,
+      confirmPassword: confirmPassword,
+    );
 
     res.fold(
       (failure) {
         String errorMsg = failure.message ?? 'Failed to reset password';
         emit(ResetPasswordFailed(errorMsg));
       },
-      (success) {
-        emit(ResetPasswordSuccess());
+      (authModel) {
+        emit(ResetPasswordSuccess(
+          emailVerified: authModel.emailVerified,
+          email: authModel.user?.email ?? '',
+        ));
       },
     );
   }
@@ -31,7 +40,12 @@ class ResetPasswordInitial extends ResetPasswordState {}
 
 class ResetPasswordLoading extends ResetPasswordState {}
 
-class ResetPasswordSuccess extends ResetPasswordState {}
+class ResetPasswordSuccess extends ResetPasswordState {
+  final bool emailVerified;
+  final String email;
+
+  ResetPasswordSuccess({this.emailVerified = true, this.email = ''});
+}
 
 class ResetPasswordFailed extends ResetPasswordState {
   final String errorMsg;

@@ -10,7 +10,7 @@ class NewHomeCubit extends Cubit<DataState> {
 
   int? _selectedPillId;
   int? _selectedCategoryId;
-  static const int _defaultLimit = 3;
+  static const int _defaultLimit = 10;
   static const String _pillPersistenceKey = 'last_selected_pill_id';
 
   // Prevent multiple simultaneous loads for the same section
@@ -33,7 +33,7 @@ class NewHomeCubit extends Cubit<DataState> {
           emit(DataLoadFailed(failure));
         },
         (jsonData) async {
-          // print('🏠 Home API Sections: ${jsonData['data']?['initial_data']?['sections']}');
+          // print('🏠 Home API Full Data: $jsonData');
           final response = NewHomeResponse.fromJson(jsonData);
           
           // If we are refreshing and already had a pill selected (other than home/1)
@@ -117,6 +117,7 @@ class NewHomeCubit extends Cubit<DataState> {
           emit(DataLoadFailed(failure));
         },
         (jsonData) {
+          // print('🏠 Home API Interactive Data: $jsonData');
           final dataPart = jsonData['data'];
           InitialData initialData;
           
@@ -173,6 +174,7 @@ class NewHomeCubit extends Cubit<DataState> {
           emit(DataLoadFailed(failure));
         },
         (jsonData) {
+          // print('🏠 Home API Interactive Data: $jsonData');
           final dataPart = jsonData['data'];
           InitialData initialData;
           
@@ -227,6 +229,7 @@ class NewHomeCubit extends Cubit<DataState> {
         },
         (jsonData) {
           _isLoadingSections = false;
+          // print('🏠 Home API More Sections Data: $jsonData');
           final dataPart = jsonData['data'];
           InitialData nextInitialData;
           
@@ -304,7 +307,7 @@ class NewHomeCubit extends Cubit<DataState> {
     try {
       final result = await Api.instance.getSectionModules(
         sectionId: sectionId,
-        limit: 1, // Request 1 module at a time as per user hint
+        limit: 10, // Request 1 module at a time as per user hint
         cursor: section.nextCursor!.toString(),
         categoryId: _selectedCategoryId,
       );
@@ -315,15 +318,37 @@ class NewHomeCubit extends Cubit<DataState> {
         },
         (jsonData) {
           _loadingSections.remove(sectionId);
-          // The API returns { "isSuccess": true, "data": { "modules": [], "nextCursor": ..., "hasMore": ... } }
-          final dataPart = jsonData['data'] ?? {};
-          final newModules = (dataPart['modules'] as List<dynamic>?)
-                  ?.map((e) => NewHomeModule.fromJson(e as Map<String, dynamic>))
-                  .toList() ??
-              [];
+          // print('🏠 Home API More Modules Data (Section $sectionId): $jsonData');
           
-          final nextCursor = dataPart['nextCursor'];
-          final hasMore = dataPart['hasMore'] ?? false;
+          final dataPart = jsonData['data'] ?? {};
+          List<NewHomeModule> newModules = [];
+          dynamic nextCursor;
+          bool hasMore = false;
+
+          // Check for initial_data structure as shown in user's example
+          if (dataPart['initial_data'] != null && dataPart['initial_data']['sections'] != null) {
+            final sectionsJson = dataPart['initial_data']['sections'] as List<dynamic>;
+            // Try to find the matching section, or just take the first one
+            final sectionJson = sectionsJson.firstWhere(
+              (s) => s['id'] == sectionId,
+              orElse: () => sectionsJson.isNotEmpty ? sectionsJson[0] : null,
+            );
+
+            if (sectionJson != null) {
+              newModules = (sectionJson['modules'] as List<dynamic>?)
+                      ?.map((e) => NewHomeModule.fromJson(e as Map<String, dynamic>))
+                      .toList() ?? [];
+              nextCursor = sectionJson['nextCursor'];
+              hasMore = sectionJson['hasMore'] ?? false;
+            }
+          } else {
+            // Fallback to simpler structure
+            newModules = (dataPart['modules'] as List<dynamic>?)
+                    ?.map((e) => NewHomeModule.fromJson(e as Map<String, dynamic>))
+                    .toList() ?? [];
+            nextCursor = dataPart['nextCursor'];
+            hasMore = dataPart['hasMore'] ?? false;
+          }
 
           // De-duplicate modules
           final existingModuleIds = section.modules.map((m) => m.id).toSet();

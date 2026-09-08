@@ -1,5 +1,10 @@
-class Failure{
+class Failure {
   final String? message;
 
-  Failure([this.message='An error occurred']);
+  String? get msg => message;
+
+  Failure([this.message = 'An error occurred']);
+
+  @override
+  String toString() => message ?? 'An error occurred';
 }

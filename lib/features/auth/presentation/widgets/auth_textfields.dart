@@ -1,11 +1,10 @@
 import 'package:edu_gym/responsive.dart';
+import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../../../core/common/constant/image_constant.dart';
 
 
 class AuthTextFields extends StatelessWidget {
@@ -25,8 +24,7 @@ class AuthTextFields extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness==Brightness.light?
-        Colors.black12 : Colors.white12,
+        color: AppColor.secondary,
         borderRadius: BorderRadius.circular(10.r),
       ),
       padding: EdgeInsets.symmetric(horizontal: 15.w,vertical: Responsive.isTablet? 10.h : 5.h),
@@ -38,6 +36,7 @@ class AuthTextFields extends StatelessWidget {
               prefixIcon!,
               height: 20.h,
               width: 20.w,
+              colorFilter: const ColorFilter.mode(AppColor.primary, BlendMode.srcIn),
             ),
 
           Expanded(
@@ -48,12 +47,12 @@ class AuthTextFields extends StatelessWidget {
               decoration: InputDecoration(
                   border: InputBorder.none,
                   hintText: text,
+                  hintStyle: TextStyle(color: AppColor.text.withOpacity(0.4)),
                   contentPadding: EdgeInsets.symmetric(horizontal: 10.w),
               ),
               style: TextStyle(
-                  color: Theme.of(context).brightness==Brightness.light?
-                  Colors.black : Colors.white,
-                  fontFamily: GoogleFonts.poppins().fontFamily,
+                  color: AppColor.text,
+                  fontFamily: GoogleFonts.openSans().fontFamily,
                   fontSize: 15.sp,
                   fontWeight: FontWeight.bold
 

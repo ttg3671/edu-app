@@ -1,21 +1,19 @@
-import 'dart:io';
 
+import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:edu_gym/core/common/constant/image_constant.dart';
-import 'package:edu_gym/core/utils/custom_snackbar.dart';
 import 'package:edu_gym/features/auth/presentation/pages/forgot_password.dart';
-import 'package:edu_gym/features/auth/presentation/pages/profile.dart';
 import 'package:edu_gym/features/auth/presentation/pages/register.dart';
+import 'package:edu_gym/features/auth/presentation/pages/verify_email.dart';
 import 'package:edu_gym/features/auth/presentation/widgets/auth_btn.dart';
-import '../../../../sample.dart';
 import '../cubit/auth_cubit.dart';
 import '../widgets/auth_textfields.dart';
 import '../widgets/bottom_rich_text.dart';
-import '../widgets/terms_richText.dart';
-import '../widgets/top_text.dart';
+import 'package:edu_gym/api/socket_service.dart';
+import 'package:edu_gym/features/account/presentation/cubit/account_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../main.dart';
 import '../cubit/login_cubit.dart';
@@ -54,29 +52,62 @@ class _LoginState extends State<Login> {
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        SizedBox(height: 20.h,),
+                        SizedBox(height: 40.h),
 
-                        // const TopText(text1: 'Log', text2: 'In'),
-                        Text(localizations?.heyThere ?? 'Hey there,',
+                        Text(
+                          localizations?.heyThere ?? 'Hey there,',
                           style: textTheme.bodyMedium?.copyWith(
-                              fontSize: 15.sp
+                            fontSize: 16.sp,
+                            color: Colors.grey.shade600,
                           ),
                         ),
-                        SizedBox(height: 5.h,),
-                        Text(localizations?.welcomeBack ?? 'Welcome Back',
+                        SizedBox(height: 8.h),
+                        Text(
+                          localizations?.welcomeBack ?? 'Welcome Back',
                           style: textTheme.titleMedium?.copyWith(
-                              fontSize: 20.sp
+                            fontSize: 26.sp,
+                            fontWeight: FontWeight.bold,
+                            color: AppColor.text,
                           ),
                         ),
-                        SizedBox(height: 10.h,),
+                        SizedBox(height: 12.h),
                         BottomRichText(
-                          text1: localizations?.dontHaveAccount ?? "Don\'t have an account?",
+                          text1: localizations?.dontHaveAccount ?? "Don't have an account?",
                           text2: localizations?.signUp ?? "Sign up",
                           onTap: (){
                             Navigator.pushReplacement(context, MaterialPageRoute(builder: (builder)=>const Register()));
                           },
                         ),
-                        SizedBox(height: 30.h,),
+                        SizedBox(height: 35.h),
+
+                        // Error message container
+                        BlocBuilder<AuthCubit, AuthState>(
+                          builder: (context, state) {
+                            if (state is AuthFailed && state.errorMsg.isNotEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.all(12.r),
+                                margin: EdgeInsets.only(bottom: 20.h),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.1),
+                                  border: Border.all(color: Colors.red, width: 1.5),
+                                  borderRadius: BorderRadius.circular(12.r),
+                                ),
+                                child: Text(
+                                  state.errorMsg,
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 14.sp,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+
                         AuthTextFields(
                           text: localizations?.email ?? 'Email',
                           textEditingController: _emailController,
@@ -99,29 +130,32 @@ class _LoginState extends State<Login> {
                           },
                         ),
 
-                        SizedBox(height: 20.h,),
-                        GestureDetector(
-                          onTap: () {
-                            print('Forgot password tapped');
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const ForgotPassword(),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 4.w),
-                            child: Text(
-                              localizations?.forgotPassword ?? 'Forgot your password?',
-                              style: textTheme.bodySmall?.copyWith(
-                                fontSize: 16.sp,
-                                color: Colors.black,
+                        SizedBox(height: 15.h),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const ForgotPassword(),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: EdgeInsets.symmetric(vertical: 6.h, horizontal: 4.w),
+                              child: Text(
+                                localizations?.forgotPassword ?? 'Forgot your password?',
+                                style: textTheme.bodySmall?.copyWith(
+                                  fontSize: 16.sp,
+                                  color: AppColor.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        SizedBox(height: 20.h,),
+                        SizedBox(height: 25.h),
                       ],
                     ),
                   ),
@@ -130,28 +164,45 @@ class _LoginState extends State<Login> {
                   padding: EdgeInsets.symmetric(vertical: 15.h),
                   child: BlocConsumer<AuthCubit,AuthState>(
                     builder: (context,state){
-                      if(state is AuthFailed){
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          CustomSnackBar.show(context: context, message: state.errorMsg);
-                        });
-                      }
-                      else if(state is AuthLoading){
-                        return const CircularProgressIndicator();
+                      if(state is AuthLoading){
+                        return const CircularProgressIndicator(color: AppColor.primary);
                       }
                       return AuthBtn(
                           text: localizations?.login ?? 'Login',
                           width: double.infinity,
-                          bgColor: Colors.black,
-                          textColor: Colors.white,
+                          bgColor: AppColor.primary,
+                          textColor: AppColor.background,
                           onTap: (){
                             FocusManager.instance.primaryFocus?.unfocus();
                             context.read<AuthCubit>().login(_emailController.text, _passController.text);
                           }
                       );
                     },
-                    listener: (context,state){
+                    listener: (context,state) async {
                       if(state is AuthSuccess){
-                        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (builder)=>MyHomePage()),(Route<dynamic> route) => false);
+                        if (!state.emailVerified) {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VerifyEmail(
+                                email: state.email.isNotEmpty
+                                    ? state.email
+                                    : _emailController.text.trim(),
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        // Initialize session (Socket and Account Details)
+                        final prefs = await SharedPreferences.getInstance();
+                        final deviceId = prefs.getString('Device_Id') ?? '';
+                        SocketService().initSocket(deviceId);
+                        
+                        if (context.mounted) {
+                          context.read<AccountCubit>().getAccountDetails();
+                          Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (builder)=>MyHomePage()),(Route<dynamic> route) => false);
+                        }
                       }
                     },
                   ),

@@ -16,31 +16,20 @@ class AuthCubit extends Cubit<AuthState>{
       return;
     }
     emit(AuthLoading());
-    final res=await Api.instance.login(email: email, password: password);
+
+    final res = await Api.instance.login(email: email, password: password);
 
     res.fold(
-            (failure){
-              // Show actual error message from API
-              String errorMsg = 'Login failed';
-              if(failure.response != null && failure.response['message'] != null){
-                errorMsg = failure.response['message'];
-              } else if(failure.msg != null){
-                errorMsg = failure.msg!;
-              }
-              emit(AuthFailed(errorMsg));
-            },
-            (data){
-              if(data.isSuccess){
-                // print('✅ User signed in successfully: ${email}');
-                // print('🔑 Access Token: ${data.token}');
-                emit(AuthSuccess(authModel: data));
-              }
-              else{
-                // print('❌ Sign-in failed for ${email}: ${data.message}');
-                String errorMsg = data.message ?? 'Login Failed';
-                emit(AuthFailed(errorMsg));
-              }
-            }
+      (failure){
+        emit(AuthFailed(failure.msg ?? ''));
+      },
+      (data){
+        emit(AuthSuccess(
+          authModel: data,
+          emailVerified: data.emailVerified,
+          email: email,
+        ));
+      }
     );
   }
 
@@ -57,39 +46,31 @@ class AuthCubit extends Cubit<AuthState>{
     }
 
     emit(AuthLoading());
-    final res=await Api.instance.register(email: email, password: password, confirmPassword: confirmPassword);
+
+    final res = await Api.instance.register(
+      email: email, 
+      password: password, 
+      confirmPassword: confirmPassword
+    );
 
     res.fold(
-            (failure){
-          // Show actual error message from API
-          String errorMsg = 'Registration failed';
-          if(failure.response != null && failure.response['message'] != null){
-            errorMsg = failure.response['message'];
-          } else if(failure.msg != null){
-            errorMsg = failure.msg!;
-          }
-          // print('❌ Registration failed for ${email}: ${errorMsg}');
-          emit(AuthFailed(errorMsg));
-        },
-            (data){
-          if(data.isSuccess){
-            // print('✅ User registered successfully: ${email}');
-            // print('🔑 Access Token: ${data.token}');
-            emit(AuthSuccess(authModel: data));
-          }
-          else{
-            // print('❌ Registration failed for ${email}: ${data.message}');
-            String errorMsg = data.message ?? 'Register Failed';
-            emit(AuthFailed(errorMsg));
-          }
-        }
+      (failure){
+        emit(AuthFailed(failure.msg ?? ''));
+      },
+      (data){
+        emit(AuthSuccess(
+          authModel: data,
+          emailVerified: data.emailVerified,
+          email: email,
+        ));
+      }
     );
   }
 
   Future<void> updateProfile({
     required String fullName,
-    String? profileImage,
     required String bio,
+    String? avatarUrl,
   }) async {
     if(fullName.trim().isEmpty){
       emit(AuthFailed('Name cannot be empty'));
@@ -98,64 +79,33 @@ class AuthCubit extends Cubit<AuthState>{
 
     emit(AuthLoading());
 
-    String? imageFilename;
-
-    // If profileImage is a local file path (not a URL), upload it first
-    if (profileImage != null &&
-        profileImage.isNotEmpty &&
-        !profileImage.startsWith('http') &&
-        !profileImage.contains('person.png')) {
-      // print('=== Uploading Image ===');
-      // print('Local file path: $profileImage');
-
-      final uploadedImageUrl = await Api.instance.uploadImage(profileImage);
-
-      if (uploadedImageUrl.isEmpty) {
-        emit(AuthFailed('Failed to upload image. Please try again.'));
-        return;
-      }
-
-      // print('Uploaded image URL: $uploadedImageUrl');
-
-      // Extract just the filename from the URL
-      // URL format: https://api.edugarciamovimiento.com/fitness/uploads/7accIrSxpbFg0ii.jpg
-      // Extract: 7accIrSxpbFg0ii.jpg
-      imageFilename = uploadedImageUrl.split('/').last;
-      print('Extracted filename: $imageFilename');
-    } else if (profileImage != null && profileImage.startsWith('http')) {
-      // If it's already a URL (existing image), extract filename
-      imageFilename = profileImage.split('/').last;
-    }
-
     final res = await Api.instance.updateUserDetails(
       fullName: fullName,
-      profileImage: imageFilename,
+      profileImage: avatarUrl,
       bio: bio,
     );
 
     res.fold(
       (failure){
-        String errorMsg = failure.message ?? 'Failed to update profile';
-        emit(AuthFailed(errorMsg));
+        emit(AuthFailed(failure.message ?? failure.msg ?? ''));
       },
-      (data){
+      (data) async {
+        // Surgically update local storage name/bio/avatarUrl
+        await TokenApi().updateLocalProfile(name: fullName, bio: bio, avatarUrl: avatarUrl);
         emit(AuthSuccess());
       }
     );
   }
 
   Future<void> isLoggedIn() async {
-    if(TokenApi.isUserLoggedIn()){
+    final token = await TokenApi.getCookie();
+    if(token != null && token.isNotEmpty){
       emit(AuthLoggedIn());
     }
     else{
       emit(AuthNotLoggedIn());
     }
   }
-
-  // Removed uploadProfileImg function - not needed for login/register flow
-  // This function was interfering with the authentication process
-  // If profile image upload is needed, create a separate ProfileCubit
 
   String validate(String email,String password){
     if(!EmailValidator.validate(email)){
@@ -171,8 +121,8 @@ class AuthCubit extends Cubit<AuthState>{
     if(pass.trim().isEmpty){
       return "Password can't be empty";
     }
-    else if(pass.length<=8){
-      return "Password length should be more than 8";
+    else if(pass.length<8){
+      return "Password length should be at least 8";
     }
     return '';
   }
@@ -187,8 +137,14 @@ class AuthLoading extends AuthState{}
 
 class AuthSuccess extends AuthState{
   final AuthModel? authModel;
+  final bool emailVerified;
+  final String email;
 
-  AuthSuccess({this.authModel});
+  AuthSuccess({
+    this.authModel,
+    this.emailVerified = true,
+    this.email = '',
+  });
 }
 
 class AuthFailed extends AuthState{

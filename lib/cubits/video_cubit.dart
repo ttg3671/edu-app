@@ -1,8 +1,7 @@
-import 'dart:math';
 
+import 'package:edu_gym/api/token_api.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -24,26 +23,14 @@ class VideoCubit extends Cubit<VideoState>{
     WakelockPlus.enable();
     emit(VideoLoading());
 
-    // videoData= trailerId!=null?
-    // await MyApi.getInstance().getTrailerUrl(trailerId: trailerId):
-    // await MyApi.getInstance().getVideoUrl(videoId: link!);
-    //
-    // if(isClosed) return;
-    //
-    // if(isTrailer==true && trailerId!=null){
-    //   link= videoData?.hlsVersions?[0].link??'';
-    // }
-    // else{
-    //   // print(link);
-    //   if(videoData?.isSubActive==true){
-    //     //Todo: fix this video links
-    //     link= videoData?.hlsVersions?[0].link??'';
-    //   }
-    //   else{
-    //     emit(SubNotActive());
-    //     return;
-    //   }
-    // }
+    // 1. Check if user is logged in
+    if (!TokenApi.isUserLoggedIn()) {
+      emit(AuthRequired());
+      return;
+    }
+
+    // Access control is handled by the caller (e.g., ModuleDetails)
+    // which has full context on module pricing and user subscription.
 
     initVideoPlayer(link: link??'');
   }
@@ -229,3 +216,5 @@ class VideoError extends VideoState{
 class VideoPaused extends VideoState{}
 
 class SubNotActive extends VideoState{}
+
+class AuthRequired extends VideoState{}

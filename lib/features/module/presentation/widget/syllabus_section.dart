@@ -1,10 +1,12 @@
+import 'package:edu_gym/core/theme/app_color.dart';
+import 'package:edu_gym/core/utils/convert.dart';
 import 'package:edu_gym/modal/lesson.dart';
 import 'package:edu_gym/modal/syllabus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../screens/lesson_details.dart';
 import '../../../../l10n/app_localizations.dart';
+import 'workout_instructions_modal.dart';
 
 class SyllabusSection extends StatefulWidget {
   final Syllabus syllabus;
@@ -12,6 +14,8 @@ class SyllabusSection extends StatefulWidget {
   final Function(Lesson)? onPlayLesson;
   final VoidCallback? onLoadMore;
   final bool isLoadingMore;
+  final bool isLocked;
+  final bool isModuleFree;
 
   const SyllabusSection({
     super.key,
@@ -20,6 +24,8 @@ class SyllabusSection extends StatefulWidget {
     this.onPlayLesson,
     this.onLoadMore,
     this.isLoadingMore = false,
+    this.isLocked = false,
+    this.isModuleFree = false,
   });
 
   @override
@@ -44,7 +50,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
     return Container(
       margin: EdgeInsets.only(bottom: 10.h),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppColor.secondary),
         borderRadius: BorderRadius.circular(10.r),
       ),
       child: Column(
@@ -59,7 +65,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 15.h),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: AppColor.secondary,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(10.r),
                   topRight: Radius.circular(10.r),
@@ -74,7 +80,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                     width: 30.w,
                     height: 30.h,
                     decoration: BoxDecoration(
-                      color: Colors.green.shade100,
+                      color: AppColor.primary.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -83,7 +89,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontSize: 14.sp,
                           fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
+                          color: AppColor.primary,
                         ),
                       ),
                     ),
@@ -96,10 +102,11 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          widget.syllabus.syllabusTitle,
+                          Convert.toTitleCase(widget.syllabus.syllabusTitle),
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontSize: 16.sp,
                             fontWeight: FontWeight.bold,
+                            color: AppColor.text,
                           ),
                         ),
                         SizedBox(height: 4.h),
@@ -107,18 +114,46 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                           localizations?.translate('lessons_count', params: {'count': '${widget.syllabus.lessonCount ?? widget.syllabus.lessons?.length ?? 0}'}) ?? '${widget.syllabus.lessonCount ?? widget.syllabus.lessons?.length ?? 0} lessons',
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontSize: 13.sp,
-                            color: Colors.grey,
+                            color: AppColor.text.withOpacity(0.5),
                           ),
                         ),
                       ],
                     ),
                   ),
 
+                  // Workout instructions info icon for syllabus
+                  if (widget.syllabus.hasWorkoutInstructions) ...[
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        showWorkoutInstructionsModal(
+                          context,
+                          title: widget.syllabus.syllabusTitle,
+                          htmlContent: widget.syllabus.workoutInstructions!,
+                          subtitle: localizations?.workoutInstructions ?? 'Workout Instructions',
+                        );
+                      },
+                      child: Container(
+                        padding: EdgeInsets.all(6.r),
+                        margin: EdgeInsets.only(right: 8.w),
+                        decoration: BoxDecoration(
+                          color: AppColor.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.info_outline_rounded,
+                          size: 18.sp,
+                          color: AppColor.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   // Expand/Collapse Icon
                   Icon(
                     _isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                     size: 24.sp,
-                    color: Colors.grey,
+                    color: AppColor.text.withOpacity(0.5),
                   ),
                 ],
               ),
@@ -129,7 +164,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
           if (_isExpanded && widget.syllabus.lessons != null && widget.syllabus.lessons!.isNotEmpty)
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColor.background,
                 borderRadius: BorderRadius.only(
                   bottomLeft: Radius.circular(10.r),
                   bottomRight: Radius.circular(10.r),
@@ -137,12 +172,12 @@ class _SyllabusSectionState extends State<SyllabusSection> {
               ),
               child: Column(
                 children: [
-                  Divider(height: 1.h, color: Colors.grey.shade300),
+                  Divider(height: 1.h, color: AppColor.secondary),
                   ...widget.syllabus.lessons!.asMap().entries.map((entry) {
                     final lessonIndex = entry.key;
                     final lesson = entry.value;
                     return _buildLessonItem(lesson, lessonIndex);
-                  }).toList(),
+                  }),
 
                   // Load More Button
                   if (widget.syllabus.hasMore == true)
@@ -152,7 +187,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                       decoration: BoxDecoration(
                         border: Border(
                           top: BorderSide(
-                            color: Colors.grey.shade200,
+                            color: AppColor.secondary,
                             width: 1,
                           ),
                         ),
@@ -164,9 +199,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                                 height: 24.h,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.5,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.green.shade700,
-                                  ),
+                                  color: AppColor.primary,
                                 ),
                               ),
                             )
@@ -178,7 +211,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                                   Icon(
                                     Icons.add_circle_outline,
                                     size: 20.sp,
-                                    color: Colors.green.shade700,
+                                    color: AppColor.primary,
                                   ),
                                   SizedBox(width: 10.w),
                                   Text(
@@ -186,7 +219,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                                     style: theme.textTheme.bodyMedium?.copyWith(
                                       fontSize: 15.sp,
                                       fontWeight: FontWeight.w600,
-                                      color: Colors.green.shade700,
+                                      color: AppColor.primary,
                                     ),
                                   ),
                                 ],
@@ -203,7 +236,10 @@ class _SyllabusSectionState extends State<SyllabusSection> {
 
   Widget _buildLessonItem(Lesson lesson, int lessonIndex) {
     final theme = Theme.of(context);
-    final isReleased = lesson.isReleased ?? true; // Default to true
+    final isReleased = lesson.isReleased ?? true;
+    final isLocked = widget.isLocked;
+    final isComingSoon = (widget.isModuleFree || lesson.isFree) && lesson.hasNullVideoIds;
+    final localizations = AppLocalizations.of(context);
 
     return InkWell(
       onTap: widget.onPlayLesson != null
@@ -218,7 +254,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
             bottom: BorderSide(
               color: lessonIndex == widget.syllabus.lessons!.length - 1
                   ? Colors.transparent
-                  : Colors.grey.shade200,
+                  : AppColor.secondary,
               width: 1,
             ),
           ),
@@ -243,7 +279,7 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                 width: 24.w,
                 height: 24.h,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
+                  color: AppColor.secondary,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -252,54 +288,137 @@ class _SyllabusSectionState extends State<SyllabusSection> {
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontSize: 11.sp,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
+                      color: AppColor.text.withValues(alpha: 0.7),
                     ),
                   ),
                 ),
               ),
             SizedBox(width: 12.w),
 
-            // Lesson Title and Duration
+            // Lesson Title and Duration / Stay Tuned
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    lesson.lessonTitle ?? 'Untitled Lesson',
+                    Convert.toTitleCase(lesson.lessonTitle).isEmpty
+                        ? 'Untitled Lesson'
+                        : Convert.toTitleCase(lesson.lessonTitle),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontSize: 14.sp,
                       fontWeight: FontWeight.w500,
-                      color: isReleased ? Colors.black : Colors.grey,
+                      color: (!isComingSoon && isReleased && !isLocked)
+                          ? AppColor.text
+                          : AppColor.text.withValues(alpha: 0.4),
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (lesson.lessonVideoLength != null) ...[
-                    SizedBox(height: 4.h),
+                  SizedBox(height: 4.h),
+                  if (isComingSoon)
+                    Text(
+                      localizations?.stayTuned ?? 'Stay tuned',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12.sp,
+                        color: AppColor.primary.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    )
+                  else if (lesson.lessonVideoLength != null && lesson.lessonVideoLength! > 0)
                     Text(
                       _formatDuration(lesson.lessonVideoLength!),
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 12.sp,
-                        color: Colors.grey,
+                        color: AppColor.text.withValues(alpha: 0.4),
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
 
-            // Play Icon - Only show if lesson is released
-            if (isReleased)
-              Icon(
-                Icons.play_circle_outline,
-                size: 22.sp,
-                color: Colors.greenAccent,
-              )
-            else
+            // Playing / In-Progress Music Equalizer Icon (when lesson has video_id || last_position_ms)
+            if (lesson.hasVideoIdOrLastPosition) ...[
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 3.h),
+                margin: EdgeInsets.only(right: 6.w),
+                decoration: BoxDecoration(
+                  color: AppColor.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6.r),
+                ),
+                child: Icon(
+                  Icons.graphic_eq_rounded,
+                  size: 16.sp,
+                  color: AppColor.primary,
+                ),
+              ),
+            ],
+
+            // Workout instructions info button (if available)
+            if (lesson.hasWorkoutInstructions) ...[
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  showWorkoutInstructionsModal(
+                    context,
+                    title: lesson.lessonTitle ?? 'Lesson',
+                    htmlContent: lesson.workoutInstructions!,
+                    subtitle: localizations?.workoutInstructions ?? 'Workout Instructions',
+                  );
+                },
+                child: Container(
+                  padding: EdgeInsets.all(5.r),
+                  margin: EdgeInsets.only(right: 8.w),
+                  decoration: BoxDecoration(
+                    color: AppColor.primary.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    size: 16.sp,
+                    color: AppColor.primary,
+                  ),
+                ),
+              ),
+            ],
+
+            // Play/Lock/Coming Soon Icon
+            if (isLocked)
               Icon(
                 Icons.lock_outline,
                 size: 20.sp,
-                color: Colors.grey,
+                color: AppColor.primary.withValues(alpha: 0.5),
+              )
+            else if (isComingSoon)
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                decoration: BoxDecoration(
+                  color: AppColor.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12.r),
+                  border: Border.all(
+                    color: AppColor.primary.withValues(alpha: 0.3),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  localizations?.comingSoon ?? 'Coming Soon',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w600,
+                    color: AppColor.primary,
+                  ),
+                ),
+              )
+            else if (isReleased)
+              Icon(
+                Icons.play_circle_outline,
+                size: 22.sp,
+                color: AppColor.primary,
+              )
+            else
+              Icon(
+                Icons.lock_clock_outlined,
+                size: 20.sp,
+                color: AppColor.text.withOpacity(0.3),
               ),
           ],
         ),

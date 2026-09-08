@@ -1,3 +1,4 @@
+import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -17,11 +18,11 @@ class ElevatedContainer extends StatelessWidget {
       height: height,
       padding: padding??EdgeInsets.all(10.r),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColor.secondary,
         borderRadius: borderRadius?? BorderRadius.circular(8.r),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withOpacity(0.3),
             blurRadius: 5,
             spreadRadius: 1.0,
           ),

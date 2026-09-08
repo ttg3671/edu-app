@@ -1,10 +1,9 @@
-import 'dart:io';
 
+import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:edu_gym/features/auth/presentation/widgets/auth_btn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/common/constant/image_constant.dart';
 import '../../../../main.dart';
@@ -14,6 +13,7 @@ import '../widgets/auth_textfields.dart';
 import '../widgets/bottom_rich_text.dart';
 import '../widgets/terms_richText.dart';
 import 'login.dart';
+import 'verify_email.dart';
 import '../../../../l10n/app_localizations.dart';
 
 class Register extends StatefulWidget {
@@ -48,17 +48,24 @@ class _RegisterState extends State<Register> {
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        SizedBox(height: 20.h),
+                        SizedBox(height: 40.h),
                         Text(
                           localizations?.heyThere ?? 'Hey there,',
-                          style: textTheme.bodyMedium?.copyWith(fontSize: 15.sp),
+                          style: textTheme.bodyMedium?.copyWith(
+                            fontSize: 16.sp,
+                            color: Colors.grey.shade600,
+                          ),
                         ),
-                        SizedBox(height: 5.h),
+                        SizedBox(height: 8.h),
                         Text(
                           localizations?.createAccount ?? 'Create an Account',
-                          style: textTheme.titleMedium?.copyWith(fontSize: 20.sp),
+                          style: textTheme.titleMedium?.copyWith(
+                            fontSize: 26.sp,
+                            fontWeight: FontWeight.bold,
+                            color: AppColor.text,
+                          ),
                         ),
-                        SizedBox(height: 10.h),
+                        SizedBox(height: 12.h),
                         BottomRichText(
                           text1: localizations?.alreadyHaveAccount ?? "Already have an account?",
                           text2: localizations?.logIn ?? "Log in",
@@ -69,7 +76,36 @@ class _RegisterState extends State<Register> {
                             );
                           },
                         ),
-                        SizedBox(height: 30.h),
+                        SizedBox(height: 35.h),
+
+                        // Error message container
+                        BlocBuilder<AuthCubit, AuthState>(
+                          builder: (context, state) {
+                            if (state is AuthFailed && state.errorMsg.isNotEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.all(12.r),
+                                margin: EdgeInsets.only(bottom: 20.h),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.1),
+                                  border: Border.all(color: Colors.red, width: 1.5),
+                                  borderRadius: BorderRadius.circular(12.r),
+                                ),
+                                child: Text(
+                                  state.errorMsg,
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 14.sp,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+
                         AuthTextFields(
                           text: localizations?.email ?? 'Email',
                           textEditingController: _emailController,
@@ -87,6 +123,7 @@ class _RegisterState extends State<Register> {
                                 state is PasswordInvisible
                                     ? Icons.visibility_off
                                     : Icons.visibility,
+                                color: AppColor.text,
                               ),
                               onTap: () => context.read<PasswordCubit>().toggle(),
                               keyboardType: TextInputType.text,
@@ -105,6 +142,7 @@ class _RegisterState extends State<Register> {
                                 state is PasswordInvisible
                                     ? Icons.visibility_off
                                     : Icons.visibility,
+                                color: AppColor.text,
                               ),
                               onTap: () => context.read<PasswordCubit>().toggle(),
                               keyboardType: TextInputType.text,
@@ -122,6 +160,20 @@ class _RegisterState extends State<Register> {
                   child: BlocConsumer<AuthCubit, AuthState>(
                     listener: (context, state) {
                       if (state is AuthSuccess) {
+                        if (!state.emailVerified) {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VerifyEmail(
+                                email: state.email.isNotEmpty
+                                    ? state.email
+                                    : _emailController.text.trim(),
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
                         Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(builder: (builder) => MyHomePage()),
@@ -130,20 +182,8 @@ class _RegisterState extends State<Register> {
                       }
                     },
                     builder: (context, state) {
-                      if (state is AuthFailed) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                state.errorMsg,
-                                style: GoogleFonts.poppins(color: Colors.white),
-                              ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        });
-                      } else if (state is AuthLoading) {
-                        return const CircularProgressIndicator();
+                      if (state is AuthLoading) {
+                        return const CircularProgressIndicator(color: AppColor.primary);
                       }
                       return Column(
                         mainAxisSize: MainAxisSize.min,
@@ -154,27 +194,13 @@ class _RegisterState extends State<Register> {
                             width: double.infinity,
                             child: AuthBtn(
                               text: localizations?.signUp ?? 'Sign Up',
-                              bgColor: const Color(0xFFE7B584),
-                              textColor: Colors.white,
+                              bgColor: AppColor.primary,
+                              textColor: AppColor.background,
                               onTap: () {
                                 FocusManager.instance.primaryFocus?.unfocus();
                                 final email = _emailController.text;
                                 final password = _passController.text;
                                 final confirmPassword = _confirmPassController.text;
-
-                                if (password != confirmPassword) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        localizations?.translate('passwords_not_match') ??
-                                            'Passwords do not match',
-                                        style: GoogleFonts.poppins(color: Colors.white),
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  return;
-                                }
 
                                 context.read<AuthCubit>().register(
                                   email,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "557512199236",
+    "project_id": "fit-app-214fe",
+    "storage_bucket": "fit-app-214fe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:557512199236:android:55fe9b553f6cf125a00011",
+        "android_client_info": {
+          "package_name": "com.edugarciamovimiento"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBOauTRVlEvpbANPRsraNQIL3VZvUyzBhM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

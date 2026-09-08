@@ -1,10 +1,13 @@
+import 'dart:async';
+
+import 'package:edu_gym/features/auth/presentation/pages/login.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:edu_gym/features/quality_player/src/potrait_video.dart';
 import 'package:video_player/video_player.dart';
-
 
 import '../../../responsive.dart';
 import '../cubit/player_cubit.dart';
@@ -12,7 +15,6 @@ import '../cubit/player_state.dart';
 import '../utils/utils.dart';
 import 'landscape_video.dart';
 import '../../../l10n/app_localizations.dart';
-
 
 class QualityPlayer extends StatefulWidget {
   ///Default video link
@@ -23,36 +25,95 @@ class QualityPlayer extends StatefulWidget {
   final List<VideoQuality>? videoQualities;
   final bool showMinimalControls;
   final String? thumbnailUrl; // Thumbnail to show while loading
-  const QualityPlayer({super.key, required this.link, this.height,
-    this.onExitIconTap, this.videoQualities, this.alwaysLandscape=false, this.showMinimalControls=false, this.thumbnailUrl,});
+  final bool isTrailer; // Added to handle trailer logic
+  final dynamic videoProviderId; // Track continue watching progress
+  final int? totalDuration; // Total duration in seconds from video API
+  final Duration? initialPosition; // Start playback at position
+
+  const QualityPlayer({
+    super.key,
+    required this.link,
+    this.height,
+    this.onExitIconTap,
+    this.videoQualities,
+    this.alwaysLandscape = false,
+    this.showMinimalControls = false,
+    this.thumbnailUrl,
+    this.isTrailer = false,
+    this.videoProviderId,
+    this.totalDuration,
+    this.initialPosition,
+  });
 
   @override
   State<QualityPlayer> createState() => _QualityPlayerState();
 }
 
 class _QualityPlayerState extends State<QualityPlayer> {
+  StreamSubscription? _sessionSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionSubscription = GoogleCastSessionManager.instance.currentSessionStream.listen((session) {
+      if (session != null) {
+        _loadMedia();
+      }
+    });
+  }
+
+  void _loadMedia() {
+    final mediaInfo = GoogleCastMediaInformation(
+      contentId: widget.link,
+      streamType: CastMediaStreamType.buffered,
+      contentType: 'video/mp4',
+      metadata: GoogleCastMovieMediaMetadata(
+        title: 'Edu Gym Video',
+        images: widget.thumbnailUrl != null
+            ? [GoogleCastImage(url: Uri.parse(widget.thumbnailUrl!))]
+            : [],
+      ),
+    );
+
+    GoogleCastRemoteMediaClient.instance.loadMedia(mediaInfo);
+  }
+
+  @override
+  void dispose() {
+    _sessionSubscription?.cancel();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider(create: (create)=>PlayerCubit()..initVideoPlayer(
+        BlocProvider(create: (create) => PlayerCubit(
+          videoProviderId: widget.videoProviderId,
+          totalDuration: widget.totalDuration,
+        )..initVideoPlayer(
           link: widget.link,
           videoQualities: widget.videoQualities,
+          isTrailer: widget.isTrailer,
+          seekPosition: widget.initialPosition,
         )),
-        BlocProvider(create: (create)=>VideoOrientationCubit()..changeOrientation(toLandscape: widget.alwaysLandscape)),
+        BlocProvider(create: (create) => VideoOrientationCubit()..changeOrientation(toLandscape: widget.alwaysLandscape)),
       ],
-      child: BlocBuilder<VideoOrientationCubit,Orientation>(
-        builder: (context,orientation){
-          return orientation == Orientation.landscape?
-          LandscapeVideo(
+      child: BlocBuilder<VideoOrientationCubit, Orientation>(
+        builder: (context, orientation) {
+          return orientation == Orientation.landscape
+              ? LandscapeVideo(
             key: const ValueKey('landscape'),
-            player: _vPlayer(iconSize: !Responsive.isTablet? 25 : 35,isLandscape: true),
+            player: _vPlayer(iconSize: !Responsive.isTablet ? 25 : 35, isLandscape: true),
             alwaysLandscape: widget.alwaysLandscape,
-          ):
-          PortraitVideo(
+          )
+              : PortraitVideo(
             key: const ValueKey('portrait'),
-            player: _vPlayer(iconSize: !Responsive.isTablet? 25 : 35),
+            player: _vPlayer(iconSize: !Responsive.isTablet ? 25 : 35),
             height: widget.height,
           );
         },
@@ -60,455 +121,540 @@ class _QualityPlayerState extends State<QualityPlayer> {
     );
   }
 
-  Widget _vPlayer({required double iconSize,bool isLandscape=false})=>
-      BlocBuilder<PlayerCubit,PlayerState>(
-          builder: (context,PlayerState state){
-            if(state is VideoInitialized){
-              return GestureDetector(
-                  onTap: (){
-                    context.read<PlayerCubit>().toggleControls();
-                  },
-                  child: _player(context: context,
-                      state: state,
-                      iconSize: iconSize,
-                      isLandscape: isLandscape,
-                    fontSize: !Responsive.isTablet? 14 : 18
-                  )
-              );
-            }
-            else if(state is VideoLoading){
-              return SizedBox(
-                height: isLandscape? double.infinity :
-                widget.height?? (MediaQuery.sizeOf(context).height * (!Responsive.isTablet? 0.25 : 0.55 )),
-                child: SafeArea(
-                  left: isLandscape,
-                  child: Stack(
-                    children: [
-                      // Show thumbnail if available
-                      if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty)
-                        Positioned.fill(
-                          child: Image.network(
-                            widget.thumbnailUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(color: Colors.black),
-                          ),
-                        ),
-                      // Dark overlay
+  Widget _vPlayer({required double iconSize, bool isLandscape = false}) =>
+      BlocBuilder<PlayerCubit, PlayerState>(
+        builder: (context, PlayerState state) {
+          if (state is VideoInitialized) {
+            return GestureDetector(
+              onTap: () {
+                context.read<PlayerCubit>().toggleControls();
+              },
+              child: _player(
+                context: context,
+                state: state,
+                iconSize: iconSize,
+                isLandscape: isLandscape,
+                fontSize: !Responsive.isTablet ? 14 : 18,
+              ),
+            );
+          } else if (state is VideoLoading) {
+            return SizedBox(
+              height: isLandscape
+                  ? double.infinity
+                  : widget.height ?? (MediaQuery.sizeOf(context).height * (!Responsive.isTablet ? 0.25 : 0.55)),
+              child: SafeArea(
+                left: isLandscape,
+                child: Stack(
+                  children: [
+                    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty)
                       Positioned.fill(
-                        child: Container(
-                          color: Colors.black.withOpacity(0.3),
+                        child: Image.network(
+                          widget.thumbnailUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.black),
                         ),
                       ),
-                      // Close button
-                      Positioned.fill(
-                          top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet? 5: 10),
-                          left: widget.height == double.infinity ? 20.w : (!Responsive.isTablet? 5: 10),
-                          child: Align(
-                            alignment: Alignment.topLeft,
-                            child: InkWell(
-                              onTap: widget.onExitIconTap??()=>onPressBack(),
-                              child: Icon(
-                                Icons.close_sharp,size: iconSize,color: Colors.white,),
-                            ),
-                          )
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.3),
                       ),
-                      // Loading indicator with text
-                      Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(color: Colors.white),
-                            SizedBox(height: 16),
-                            Text(
-                              'Loading video...',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-            else if(state is VideoError){
-              final localizations = AppLocalizations.of(context);
-              return Stack(
-                children: [
-                  Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(localizations?.playbackError ?? "Playback error",style: TextStyle(color: Colors.white,fontSize: 12),),
-                          SizedBox(height: 5),
-                          InkWell(
-                            onTap: (){
-                              context.read<PlayerCubit>().initVideoPlayer(link: state.videoLink);
-                            },
-                            child: Container(
-                              padding: EdgeInsets.symmetric(vertical: 5,horizontal: 10),
-                              decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10)
-                              ),
-                              child: Text(localizations?.retry ?? "Retry",
-                                style: TextStyle(color: Colors.black,fontSize: 10),
-                              ),
-                            ),
-                          )
-                        ],
-                      )
-                  ),
-                  Positioned.fill(
+                    ),
+                    Positioned.fill(
+                      top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet ? 5 : 10),
+                      left: widget.height == double.infinity ? 20.w : (!Responsive.isTablet ? 5 : 10),
                       child: Align(
                         alignment: Alignment.topLeft,
                         child: InkWell(
-                          onTap: widget.onExitIconTap??()=>onPressBack(),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Icon(
-                              Icons.arrow_back_ios,size: 30,color: Colors.white,),
-                          ),
-                        ),
-                      )
-                  )
-                ],
-              );
-            }
-            return SizedBox.shrink();
-          }
-      );
-
-  Widget _player({required BuildContext context, required VideoInitialized state,
-    required double iconSize,required double fontSize, bool isLandscape=false}){
-    return GestureDetector(
-      onScaleStart: (scale){
-        // print(scale.focalPoint);
-      },
-
-      child: Stack(
-        children: [
-          isLandscape?
-          Center(
-            child: AspectRatio(
-                aspectRatio: state.videoPlayerController.value.aspectRatio,
-                child: VideoPlayer(state.videoPlayerController)
-            ),
-          )
-          :
-              SizedBox.expand(
-                child: FittedBox(
-                  fit: widget.height == double.infinity ? BoxFit.cover : BoxFit.contain,
-                  child: SizedBox(
-                    width: state.videoPlayerController.value.size.width,
-                    height: state.videoPlayerController.value.size.height,
-                    child: VideoPlayer(state.videoPlayerController),
-                  ),
-                ),
-              ),
-
-          ValueListenableBuilder(valueListenable: state.videoPlayerController,
-            builder: (BuildContext context, VideoPlayerValue value, Widget? child) {
-              if(value.isBuffering) {
-                // final range= value.buffered.isNotEmpty? value.buffered[value.buffered.length-1] :
-                // DurationRange(Duration(),Duration());
-                // print('${value.buffered} ${range.end.inSeconds-range.start.inSeconds<8}');
-                // if(range.end.inSeconds-range.start.inSeconds<8) {
-                //   return const Center(child: CircularProgressIndicator(color:  Colors.white,),);
-                // }
-
-                return const Center(child: CircularProgressIndicator(color:  Colors.white,),);
-              }
-              return SizedBox.shrink();
-            },
-          ),
-          Container(color: state.showControls? Colors.black45 : Colors.transparent,),
-
-          Positioned.fill(
-              child: Align(
-                alignment: Alignment.center,
-                child: AnimatedOpacity(
-                  opacity: state.showControls? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      InkWell(
-                        onTap: ()=>state.showControls?context.read<PlayerCubit>().backwardVideo():
-                        context.read<PlayerCubit>().toggleControls(),
-                        child: Container(
-                            padding: EdgeInsets.all(10),
-                            decoration: const BoxDecoration(
-                                color: Colors.black26,
-                                shape: BoxShape.circle
-                            ),
-                            child: Icon(
-                              Icons.replay_10,
-                              size: iconSize,
-                              color: Colors.white,
-                            )
-                        ),
-                      ),
-                      InkWell(
-                        onTap: ()=>state.showControls?context.read<PlayerCubit>().toggleVideoPlay():
-                        context.read<PlayerCubit>().toggleControls(),
-                        child: Container(
-                          padding: EdgeInsets.all(10),
-                          decoration: const BoxDecoration(
-                              color: Colors.black26,
-                              shape: BoxShape.circle
-                          ),
+                          onTap: widget.onExitIconTap ?? () => onPressBack(),
                           child: Icon(
-                            state.videoPlayerController.value.isPlaying?
-                            Icons.pause:Icons.play_arrow,
-                            size: iconSize,
-                            color: Colors.white,),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: ()=>state.showControls?context.read<PlayerCubit>().forwardVideo():
-                        context.read<PlayerCubit>().toggleControls(),
-                        child: Container(
-                          padding: EdgeInsets.all(10),
-                          decoration: const BoxDecoration(
-                              color: Colors.black26,
-                              shape: BoxShape.circle
-                          ),
-                          child: Icon(
-                            Icons.forward_10,
+                            Icons.close_sharp,
                             size: iconSize,
                             color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Colors.white),
+                          SizedBox(height: 16),
+                          Text(
+                            'Loading video...',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          } else if (state is VideoError) {
+            final localizations = AppLocalizations.of(context);
+            return Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        localizations?.playbackError ?? "Playback error",
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                      const SizedBox(height: 5),
+                      InkWell(
+                        onTap: () {
+                          context.read<PlayerCubit>().initVideoPlayer(link: state.videoLink);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            localizations?.retry ?? "Retry",
+                            style: const TextStyle(color: Colors.black, fontSize: 10),
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              )
-          ),
-
-          Positioned.fill(
-              bottom: isLandscape? !Responsive.isTablet? 40: 50: 0,
-              left: isLandscape? !Responsive.isTablet? 5: 10:0,
-              right: isLandscape?!Responsive.isTablet? 5: 10:0,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: ValueListenableBuilder(
-                  valueListenable: state.videoPlayerController,
-                  builder: (BuildContext context, value, Widget? child) {
-                    final currentPosition = Utils.formatDuration(value.position);
-                    final totalDuration = Utils.formatDuration(value.duration);
-                    return AnimatedOpacity(
-                      opacity: state.showControls? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: SafeArea(
-                        left: isLandscape,
-                        right: false,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Padding(
-                              padding: EdgeInsets.symmetric(vertical: !Responsive.isTablet? 5: 10,
-                                  horizontal: isLandscape? 0: !Responsive.isTablet? 5: 10),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('$currentPosition : $totalDuration',
-                                    style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                                        color: Colors.white,
-                                        fontSize: fontSize
-                                    ),
-                                  ),
-                                  InkWell(
-                                    onTap: (){
-                                      if(state.showControls){
-                                        isLandscape?
-                                        context.read<VideoOrientationCubit>().portrait():
-                                        context.read<VideoOrientationCubit>().landscape();
-                                      }
-                                    },
-                                    child: Icon(isLandscape? Icons.fullscreen_exit : Icons.fullscreen,
-                                      color:Colors.white,
-                                      size: iconSize,
-                                    ),
-                                  )
-                                ],
-                              ),
-                            ),
-                            VideoProgressIndicator(
-                                state.videoPlayerController,
-                                allowScrubbing: true
-                            ),
-                          ],
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: InkWell(
+                      onTap: widget.onExitIconTap ?? () => onPressBack(),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Icon(
+                          Icons.arrow_back_ios,
+                          size: 30,
+                          color: Colors.white,
                         ),
-                      ),
-                    );
-                  },
-                ),
-              )
-          ),
-
-          Positioned.fill(
-              top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet? 5: 10),
-              right: widget.height == double.infinity ? 20.w : (!Responsive.isTablet? 15: 20),
-              child: AnimatedOpacity(
-                opacity: state.showControls? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
-                child: Align(
-                  alignment: Alignment.topRight,
-                  child:  Visibility(
-                    visible: state.showControls,
-                    child: InkWell(
-                        onTap: (){
-                          _showBottomDialog(
-                              context: context,
-                              controller: state.videoPlayerController,
-                              videoQualities: widget.videoQualities??[],
-                              currentQuality: state.currentQuality,
-                              isLandscape: isLandscape
-                          );
-                        },
-                        child: Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Icon(Icons.settings,
-                            size: iconSize,
-                            color: Colors.white,
-                          ),
-                        )),
-                  ),
-                ),
-              )
-          ),
-
-          Positioned.fill(
-              top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet? 5: 10),
-              left: widget.height == double.infinity ? 20.w : (!Responsive.isTablet? 5: 10),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: SafeArea(
-                  left: isLandscape,
-                  child: AnimatedOpacity(
-                    opacity: state.showControls? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: InkWell(
-                      onTap: widget.onExitIconTap??(){
-                        if(isLandscape){
-                          if(state.showControls) {
-                            if(widget.alwaysLandscape){
-                              onPressBack();
-                            }
-                            else{
-                              context.read<VideoOrientationCubit>().portrait();
-                            }
-                          }
-                          else{
-                            context.read<PlayerCubit>().toggleControls();
-                          }
-                        }
-                        else{
-                          onPressBack();
-                        }
-                      },
-                      child: Icon(
-                        Icons.close_sharp,
-                        size: iconSize,
-                        color: Colors.white,
                       ),
                     ),
                   ),
                 ),
-              )
+              ],
+            );
+          } else if (state is SubNotActive) {
+            return _errorOverlay(
+              context,
+              iconSize,
+              "Subscription Required",
+              "Please subscribe to watch this video.",
+              onRetry: () => onPressBack(),
+              buttonText: "Go Back",
+            );
+          } else if (state is AuthRequired) {
+            return _errorOverlay(
+              context,
+              iconSize,
+              "Authentication Required",
+              "Please login to watch this video.",
+              onRetry: () {
+                Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const Login()));
+              },
+              buttonText: "Login Now",
+            );
+          }
+          return const SizedBox.shrink();
+        },
+      );
+
+  Widget _errorOverlay(BuildContext context, double iconSize, String title, String message, {required VoidCallback onRetry, required String buttonText}) {
+    return Container(
+      color: Colors.black,
+      height: widget.height ?? (MediaQuery.sizeOf(context).height * (!Responsive.isTablet ? 0.25 : 0.55)),
+      child: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, color: Colors.white, size: 40.sp),
+                  SizedBox(height: 10.h),
+                  Text(title, style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 5.h),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 40.w),
+                    child: Text(message, textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 12.sp)),
+                  ),
+                  SizedBox(height: 20.h),
+                  ElevatedButton(
+                    onPressed: onRetry,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
+                    ),
+                    child: Text(buttonText),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 10.h,
+            left: 10.w,
+            child: IconButton(
+              icon: Icon(Icons.close, color: Colors.white, size: 24.sp),
+              onPressed: () => onPressBack(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  Widget _player({required BuildContext context, required VideoInitialized state,
+    required double iconSize, required double fontSize, bool isLandscape = false}) {
+    return GestureDetector(
+      onScaleStart: (scale) {},
+      child: Stack(
+        children: [
+          isLandscape
+              ? Center(
+            child: AspectRatio(
+              aspectRatio: state.videoPlayerController.value.aspectRatio,
+              child: VideoPlayer(state.videoPlayerController),
+            ),
           )
+              : SizedBox.expand(
+            child: FittedBox(
+              fit: widget.height == double.infinity ? BoxFit.cover : BoxFit.contain,
+              child: SizedBox(
+                width: state.videoPlayerController.value.size.width,
+                height: state.videoPlayerController.value.size.height,
+                child: VideoPlayer(state.videoPlayerController),
+              ),
+            ),
+          ),
+
+          ValueListenableBuilder(
+            valueListenable: state.videoPlayerController,
+            builder: (BuildContext context, VideoPlayerValue value, Widget? child) {
+              if (value.isBuffering) {
+                return const Center(child: CircularProgressIndicator(color: Colors.white));
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          Container(color: state.showControls ? Colors.black45 : Colors.transparent),
+
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.center,
+              child: AnimatedOpacity(
+                opacity: state.showControls ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 300),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    InkWell(
+                      onTap: () => state.showControls
+                          ? context.read<PlayerCubit>().backwardVideo()
+                          : context.read<PlayerCubit>().toggleControls(),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                          color: Colors.black26,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.replay_10,
+                          size: iconSize,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => state.showControls
+                          ? context.read<PlayerCubit>().toggleVideoPlay()
+                          : context.read<PlayerCubit>().toggleControls(),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                          color: Colors.black26,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          state.videoPlayerController.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                          size: iconSize,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => state.showControls
+                          ? context.read<PlayerCubit>().forwardVideo()
+                          : context.read<PlayerCubit>().toggleControls(),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                          color: Colors.black26,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.forward_10,
+                          size: iconSize,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          Positioned.fill(
+            bottom: isLandscape ? (!Responsive.isTablet ? 40 : 50) : 0,
+            left: isLandscape ? (!Responsive.isTablet ? 5 : 10) : 0,
+            right: isLandscape ? (!Responsive.isTablet ? 5 : 10) : 0,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: ValueListenableBuilder(
+                valueListenable: state.videoPlayerController,
+                builder: (BuildContext context, value, Widget? child) {
+                  final currentPosition = Utils.formatDuration(value.position);
+                  final totalDuration = Utils.formatDuration(value.duration);
+                  return AnimatedOpacity(
+                    opacity: state.showControls ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: SafeArea(
+                      left: isLandscape,
+                      right: false,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: !Responsive.isTablet ? 5 : 10,
+                              horizontal: isLandscape ? 0 : (!Responsive.isTablet ? 5 : 10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '$currentPosition : $totalDuration',
+                                  style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                                    color: Colors.white,
+                                    fontSize: fontSize,
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    // Hide connected devices icon as requested
+                                    const SizedBox.shrink(),
+                                    InkWell(
+                                      onTap: () {
+                                        if (state.showControls) {
+                                          isLandscape
+                                              ? context.read<VideoOrientationCubit>().portrait()
+                                              : context.read<VideoOrientationCubit>().landscape();
+                                        }
+                                      },
+                                      child: Icon(
+                                        isLandscape ? Icons.fullscreen_exit : Icons.fullscreen,
+                                        color: Colors.white,
+                                        size: iconSize,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          VideoProgressIndicator(
+                            state.videoPlayerController,
+                            allowScrubbing: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          Positioned.fill(
+            top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet ? 5 : 10),
+            right: widget.height == double.infinity ? 20.w : (!Responsive.isTablet ? 15 : 20),
+            child: Align(
+              alignment: Alignment.topRight, // Fixed the malformed alignment argument hierarchy bug here
+              child: AnimatedOpacity(
+                opacity: state.showControls ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 300),
+                child: Visibility(
+                  visible: state.showControls,
+                  child: InkWell(
+                      onTap: () {
+                        _showBottomDialog(
+                          context: context,
+                          controller: state.videoPlayerController,
+                          videoQualities: widget.videoQualities ?? [],
+                          currentQuality: state.currentQuality,
+                          isLandscape: isLandscape,
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(
+                          Icons.settings,
+                          size: iconSize,
+                          color: Colors.white,
+                        ),
+                      )),
+                ),
+              ),
+            ),
+          ),
+
+          Positioned.fill(
+            top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet ? 5 : 10),
+            left: widget.height == double.infinity ? 20.w : (!Responsive.isTablet ? 5 : 10),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SafeArea(
+                left: isLandscape,
+                child: AnimatedOpacity(
+                  opacity: state.showControls ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: InkWell(
+                    onTap: () {
+                      context.read<PlayerCubit>().syncProgress();
+                      if (widget.onExitIconTap != null) {
+                        widget.onExitIconTap!();
+                      } else {
+                        if (isLandscape) {
+                          if (state.showControls) {
+                            if (widget.alwaysLandscape) {
+                              onPressBack();
+                            } else {
+                              context.read<VideoOrientationCubit>().portrait();
+                            }
+                          } else {
+                            context.read<PlayerCubit>().toggleControls();
+                          }
+                        } else {
+                          onPressBack();
+                        }
+                      }
+                    },
+                    child: Icon(
+                      Icons.close_sharp,
+                      size: iconSize,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
   void _showBottomDialog({required BuildContext context,
-    required VideoPlayerController controller,required List<VideoQuality> videoQualities,
-    required int? currentQuality,bool? isLandscape}){
+    required VideoPlayerController controller, required List<VideoQuality> videoQualities,
+    required int? currentQuality, bool? isLandscape}) {
 
-    int? currentQuality= context.read<PlayerCubit>().currentQuality;
+    int? currentQuality = context.read<PlayerCubit>().currentQuality;
     final localizations = AppLocalizations.of(context);
 
     showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (c){
-          return SafeArea(
-            child: Container(
-              padding: EdgeInsets.symmetric(vertical: 30,horizontal: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _bottomSettingsIcon(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (c) {
+        return SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _bottomSettingsIcon(
+                  context: context,
+                  settingsName: localizations?.quality ?? 'Quality',
+                  settingsIcon: Icons.high_quality_outlined,
+                  value: currentQuality == VideoQuality.auto || currentQuality == null
+                      ? localizations?.auto ?? 'Auto'
+                      : '${currentQuality}p',
+                  onTap: () {
+                    _videoQualityDialog(
                       context: context,
-                      settingsName: localizations?.quality ?? 'Quality',
-                      settingsIcon: Icons.high_quality_outlined,
-                      value: currentQuality==VideoQuality.auto || currentQuality==null ? localizations?.auto ?? 'Auto': '${currentQuality}p',
-                      onTap: () {
-                        _videoQualityDialog(context: context, controller: controller,
-                            videoQualities: videoQualities,currentQuality: currentQuality??VideoQuality.auto,
-                            isLandscape: isLandscape);
-                      },
-                    isLandscape: isLandscape
-                  ),
-                  _bottomSettingsIcon(
-                      context: context,
-                      settingsName: localizations?.playbackSpeed ?? 'Playback speed',
-                      settingsIcon: Icons.speed,
-                      value: '${controller.value.playbackSpeed}',
-                      onTap: () {
-                        _playBackDialog(context: context,controller: controller,isLandscape: isLandscape);
-                      },
-                      isLandscape: isLandscape
-                  ),
-                ],
-              ),
+                      controller: controller,
+                      videoQualities: videoQualities,
+                      currentQuality: currentQuality ?? VideoQuality.auto,
+                      isLandscape: isLandscape,
+                    );
+                  },
+                  isLandscape: isLandscape,
+                ),
+                _bottomSettingsIcon(
+                  context: context,
+                  settingsName: localizations?.playbackSpeed ?? 'Playback speed',
+                  settingsIcon: Icons.speed,
+                  value: '${controller.value.playbackSpeed}',
+                  onTap: () {
+                    _playBackDialog(context: context, controller: controller, isLandscape: isLandscape);
+                  },
+                  isLandscape: isLandscape,
+                ),
+              ],
             ),
-          );
-        }
+          ),
+        );
+      },
     );
   }
 
   Widget _bottomSettingsIcon({required BuildContext context,
-    required String settingsName,required IconData settingsIcon,
+    required String settingsName, required IconData settingsIcon,
     required String value, required VoidCallback onTap,
-    bool? isLandscape}){
+    bool? isLandscape}) {
 
-    final double iconSize= !Responsive.isTablet? 25 : 35;
-    final double fontSize= !Responsive.isTablet? 15 : 20;
-
-    final theme= Theme.of(context);
+    final double iconSize = !Responsive.isTablet ? 25 : 35;
+    final double fontSize = !Responsive.isTablet ? 15 : 20;
+    final theme = Theme.of(context);
 
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: isLandscape== true? 12: 8,),
+        padding: EdgeInsets.symmetric(vertical: isLandscape == true ? 12 : 8),
         child: Row(
           children: [
-            Icon(settingsIcon,size: iconSize,),
-            SizedBox(width: 20,),
+            Icon(settingsIcon, size: iconSize),
+            const SizedBox(width: 20),
             Text(settingsName,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                    fontSize: fontSize,
-                    color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.bold
-                )
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: fontSize,
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            Spacer(),
+            const Spacer(),
             Text(value,
               style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: fontSize,
+                fontSize: fontSize,
                 color: theme.colorScheme.onSurface,
               ),
             ),
-            Icon(Icons.arrow_forward_ios,size: iconSize/2,),
+            Icon(Icons.arrow_forward_ios, size: iconSize / 2),
           ],
         ),
       ),
@@ -517,127 +663,116 @@ class _QualityPlayerState extends State<QualityPlayer> {
 
   void _videoQualityDialog({required BuildContext context,
     required VideoPlayerController controller, required List<VideoQuality> videoQualities,
-    required int currentQuality,bool? isLandscape}){
+    required int currentQuality, bool? isLandscape}) {
 
-    final double fontSize= !Responsive.isTablet? 15 : 20;
-    final double iconSize=fontSize;
-
-    final theme= Theme.of(context);
+    final double fontSize = !Responsive.isTablet ? 15 : 20;
+    final double iconSize = fontSize;
+    final theme = Theme.of(context);
     final localizations = AppLocalizations.of(context);
 
     showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (c){
-          return SafeArea(
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: 30,horizontal: 20),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: videoQualities.map((videoQuality)=>
-                      InkWell(
-                        onTap: (){
-                          context.read<PlayerCubit>().changeQuality(videoQuality);
-                          Navigator.pop(context);
-                          Navigator.pop(context);
-                        },
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            children: [
-                              Opacity(
-                                  opacity: videoQuality.quality==currentQuality? 1 : 0,
-                                  child: Icon(Icons.check,size: iconSize,)
-                              ),
-                              SizedBox(width: 10,),
-                              Text(videoQuality.quality==0? localizations?.auto ?? 'Auto' : '${videoQuality.quality}p',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontSize: fontSize,
-                                      fontWeight: FontWeight.bold,
-                                    color: theme.colorScheme.onSurface,
-                                  )),
-                            ],
-                          ),
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (c) {
+        return SafeArea(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: videoQualities.map((videoQuality) =>
+                    InkWell(
+                      onTap: () {
+                        context.read<PlayerCubit>().changeQuality(videoQuality);
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            Opacity(
+                              opacity: videoQuality.quality == currentQuality ? 1 : 0,
+                              child: Icon(Icons.check, size: iconSize),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(videoQuality.quality == 0 ? localizations?.auto ?? 'Auto' : '${videoQuality.quality}p',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: fontSize,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                )),
+                          ],
                         ),
-                      )).toList(),
-                ),
+                      ),
+                    )).toList(),
               ),
             ),
-          );
-        }
+          ),
+        );
+      },
     );
   }
 
   void _playBackDialog({required BuildContext context, required VideoPlayerController controller,
-    bool? isLandscape}){
+    bool? isLandscape}) {
 
-    final double fontSize= !Responsive.isTablet? 15 : 20;
-    final double iconSize=fontSize;
-
-    final theme= Theme.of(context);
+    final double fontSize = !Responsive.isTablet ? 15 : 20;
+    final double iconSize = fontSize;
+    final theme = Theme.of(context);
 
     showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (c){
-          return SafeArea(
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: 30,horizontal: 20),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [0.25,0.5,1.0,1.25,1.5,2.0].map((e)=>
-                      InkWell(
-                        onTap: (){
-                          context.read<PlayerCubit>().changeSpeed(e);
-                          Navigator.pop(context);
-                          Navigator.pop(context);
-                        },
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            children: [
-                              Opacity(
-                                  opacity: e==controller.value.playbackSpeed? 1 : 0,
-                                  child: Icon(Icons.check,size: iconSize,)
-                              ),
-                              SizedBox(width: 10,),
-                              Text('$e',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontSize: fontSize,
-                                      fontWeight: FontWeight.bold,
-                                    color: theme.colorScheme.onSurface,
-                                  )),
-                            ],
-                          ),
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (c) {
+        return SafeArea(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [0.25, 0.5, 1.0, 1.25, 1.5, 2.0].map((e) =>
+                    InkWell(
+                      onTap: () {
+                        context.read<PlayerCubit>().changeSpeed(e);
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            Opacity(
+                              opacity: e == controller.value.playbackSpeed ? 1 : 0,
+                              child: Icon(Icons.check, size: iconSize),
+                            ),
+                            const SizedBox(width: 10),
+                            Text('$e',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: fontSize,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                )),
+                          ],
                         ),
-                      )).toList(),
-                ),
+                      ),
+                    )).toList(),
               ),
             ),
-          );
-        }
+          ),
+        );
+      },
     );
   }
 
-  @override
-  void dispose() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    super.dispose();
-  }
-
-  void onPressBack(){
-    if(Navigator.canPop(context)){
+  void onPressBack() {
+    if (Navigator.canPop(context)) {
       Navigator.pop(context);
     }
   }

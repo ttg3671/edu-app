@@ -1,9 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
-        android:label="edugarciamovimiento"
+        android:label="EduMovimiento"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
+
+        <!-- Default notification channel for Firebase Cloud Messaging -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="high_importance_channel" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -25,7 +33,98 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Deep Linking for edugarciamovimiento://email_verified -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="email_verified" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="email-verified" />
+            </intent-filter>
+
+            <!-- Deep Linking for edugarciamovimiento://payment-success -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="payment-success" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="payment_success" />
+            </intent-filter>
+
+            <!-- Deep Linking for edugarciamovimiento://payment-canceled -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="payment-canceled" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="payment_canceled" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="payment-cancelled" />
+                <data
+                    android:scheme="edugarciamovimiento"
+                    android:host="payment_cancelled" />
+            </intent-filter>
+
+            <!-- Deep Linking for edugarciamovimiento://callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="edugarciamovimiento" android:host="callback" />
+                <data android:scheme="edugym" android:host="callback" />
+            </intent-filter>
+
+            <!-- General Deep Linking for edugarciamovimiento:// -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="edugarciamovimiento" />
+            </intent-filter>
+
+            <!-- General Deep Linking for edugym:// -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="edugym" />
+            </intent-filter>
+
+            <!-- App Links for https://www.edumovimiento.com and https://edumovimiento.com -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.edumovimiento.com" />
+                <data android:scheme="https" android:host="edumovimiento.com" />
+                <data android:scheme="http" android:host="www.edumovimiento.com" />
+                <data android:scheme="http" android:host="edumovimiento.com" />
+            </intent-filter>
         </activity>
+
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.felnanuke.flutter_chrome_cast.GoogleCastOptionsProvider" />
+
+        <service
+            android:name="com.google.android.gms.cast.framework.media.MediaNotificationService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -38,6 +137,30 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="youtube" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="fb" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="instagram" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tiktok" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

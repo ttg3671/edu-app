@@ -1,4 +1,7 @@
+import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/features/module/presentation/screens/module_details.dart';
+import 'package:edu_gym/features/module/presentation/screens/module_lessons_screen.dart';
+import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -29,7 +32,7 @@ class _SearchState extends State<Search> {
           Container(
             padding: EdgeInsets.symmetric(vertical: 5.h,horizontal: 5.w),
             decoration: BoxDecoration(
-              color: Theme.of(context).textTheme.titleSmall?.color?.withValues(alpha: 0.1),
+              color: AppColor.secondary,
               borderRadius: BorderRadius.circular(10.r),
             ),
             child: Row(
@@ -41,6 +44,7 @@ class _SearchState extends State<Search> {
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       hintText: localizations?.translate('search_hint') ?? 'Search..',
+                      hintStyle: TextStyle(color: AppColor.text.withOpacity(0.4)),
                       contentPadding: EdgeInsets.symmetric(horizontal: 10.w),
                     ),
                     style: Theme.of(context).textTheme.titleSmall,
@@ -55,7 +59,7 @@ class _SearchState extends State<Search> {
                       FocusManager.instance.primaryFocus?.unfocus();
                       context.read<SearchCubit>().search(searchController.text);
                     },
-                    child: Icon(Icons.search,color: Colors.blue,size: 25.sp,)),
+                    child: Icon(Icons.search,color: AppColor.primary,size: 25.sp,)),
                 SizedBox(width: 10.w,),
               ],
             ),
@@ -75,7 +79,7 @@ class _SearchState extends State<Search> {
                               onTap: () {
                                 context.read<SearchCubit>().clearPrefs();
                               },
-                              child: Text(localizations?.translate('clear') ?? "Clear",style: GoogleFonts.poppins(color: Colors.red,fontWeight: FontWeight.bold),),
+                              child: Text(localizations?.translate('clear') ?? "Clear",style: GoogleFonts.openSans(color: AppColor.primary,fontWeight: FontWeight.bold),),
                             )
                           ],
                         ),
@@ -136,16 +140,31 @@ class _SearchState extends State<Search> {
                             itemBuilder: (context,index){
                               final module = state.searchModal.modules[index];
                               return InkWell(
-                                onTap: (){
-                                  FocusManager.instance.primaryFocus?.unfocus();
-                                  context.read<SearchCubit>().saveToPrefs();
-                                  Navigator.push(context, MaterialPageRoute(builder:
-                                      (context)=>ModuleDetails(
-                                          moduleId: module.moduleId,
-                                          moduleTitle: module.moduleTitle
-                                      )
-                                  ));
-                                },
+                                  onTap: (){
+                                    FocusManager.instance.primaryFocus?.unfocus();
+                                    if (TokenApi.isUserLoggedIn()) {
+                                      context.read<SearchCubit>().saveToPrefs();
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => ModuleLessonsScreen(
+                                            moduleId: module.moduleId,
+                                            moduleTitle: module.moduleTitle,
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => ModuleDetails(
+                                            moduleId: module.moduleId,
+                                            moduleTitle: module.moduleTitle,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
                                 child: ModuleSearchCard(module: module),
                               );
                             },

@@ -1,417 +1,285 @@
-import 'package:edu_gym/api/api.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:edu_gym/api/token_api.dart';
+import 'package:edu_gym/core/common/widgets/custom_shimmer.dart';
 import 'package:edu_gym/core/common/widgets/loader.dart';
 import 'package:edu_gym/core/cubit_states/data_state.dart';
-import 'package:edu_gym/features/module/presentation/cubit/module_cubit.dart';
-import 'package:edu_gym/features/module/presentation/widget/module_description.dart';
-import 'package:edu_gym/features/module/presentation/widget/module_lesson.dart';
-import 'package:edu_gym/features/module/presentation/widget/syllabus_section.dart';
-import 'package:edu_gym/modal/lesson.dart';
-import 'package:edu_gym/modal/module.dart';
-import 'package:edu_gym/responsive.dart';
+import 'package:edu_gym/core/theme/app_color.dart';
+import 'package:edu_gym/core/utils/convert.dart';
+import 'package:edu_gym/features/auth/presentation/pages/training_auth_prompt_screen.dart';
+import 'package:edu_gym/features/auth/presentation/widgets/auth_btn.dart';
+import 'package:edu_gym/features/module/presentation/cubit/module_detail_cubit.dart';
+import 'package:edu_gym/features/module/presentation/screens/module_lessons_screen.dart';
+import 'package:edu_gym/l10n/app_localizations.dart';
+import 'package:edu_gym/modal/module_detail_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import 'landscape_video_player_screen.dart';
-import 'vertical_video_player_screen.dart';
-import '../../../../l10n/app_localizations.dart';
-
 class ModuleDetails extends StatefulWidget {
   final int moduleId;
-  final String moduleTitle;
-  const ModuleDetails({super.key, required this.moduleId, required this.moduleTitle});
+  final String? moduleTitle;
+  const ModuleDetails({super.key, required this.moduleId, this.moduleTitle});
 
   @override
   State<ModuleDetails> createState() => _ModuleDetailsState();
 }
 
 class _ModuleDetailsState extends State<ModuleDetails> {
-
-  Future<void> _onPlayLesson(Lesson lesson) async {
-    final videoProviderId = lesson.videoProviderId;
-    final uiStyle = lesson.uiStyle ?? 'horizontal';
-
-    if (videoProviderId == null || videoProviderId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video ID not found')),
-      );
-      return;
+  @override
+  void initState() {
+    super.initState();
+    if (TokenApi.isUserLoggedIn()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ModuleLessonsScreen(
+                moduleId: widget.moduleId,
+                moduleTitle: widget.moduleTitle ?? '',
+              ),
+            ),
+          );
+        }
+      });
     }
-
-    // Show loading
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: Loader()),
-    );
-
-    final result = await Api.instance.getLessonVideo(
-      videoProviderId: videoProviderId,
-      uiStyle: uiStyle,
-    );
-
-    // Hide loading
-    if (mounted) Navigator.pop(context);
-
-    result.fold(
-      (failure) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load video: ${failure.message}')),
-        );
-      },
-      (jsonData) {
-        final data = jsonData['data'];
-        final List<dynamic> filesJson = data['files'] ?? [];
-        final List<VideoFile> videoFiles = filesJson.map((f) => VideoFile.fromJson(f)).toList();
-        
-        if (videoFiles.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No video files found')),
-          );
-          return;
-        }
-
-        // Get HLS or first available
-        final hlsVideo = videoFiles.firstWhere(
-          (vf) => vf.quality.toLowerCase() == 'hls',
-          orElse: () => videoFiles.first,
-        );
-
-        final videoUrl = hlsVideo.link;
-        final responseUiStyle = data['ui_style'] ?? uiStyle;
-        final apiThumbnail = data['thumbnail']?.toString();
-        final effectiveThumbnail = (apiThumbnail != null && apiThumbnail.isNotEmpty) 
-            ? apiThumbnail 
-            : lesson.lessonImage;
-
-        if (responseUiStyle == 'vertical') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => VerticalVideoPlayerScreen(
-                videoUrl: videoUrl,
-                lessonTitle: lesson.lessonTitle ?? 'Video',
-                videoFiles: videoFiles,
-                thumbnailUrl: effectiveThumbnail,
-              ),
-            ),
-          );
-        } else {
-          // Landscape/Horizontal player
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => LandscapeVideoPlayerScreen(
-                videoUrl: videoUrl,
-                lessonTitle: lesson.lessonTitle ?? 'Video',
-                videoFiles: videoFiles,
-                thumbnailUrl: effectiveThumbnail,
-              ),
-            ),
-          );
-        }
-      },
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (TokenApi.isUserLoggedIn()) {
+      return const Scaffold(
+        backgroundColor: AppColor.background,
+        body: Center(child: Loader()),
+      );
+    }
     final localizations = AppLocalizations.of(context);
-    return BlocProvider(
-        create: (create)=>ModuleCubit()..loadData(widget.moduleId),
-        child: Scaffold(
-          appBar: AppBar(
-            title: Text(widget.moduleTitle,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontSize: 15.sp
-              ),
-              maxLines: 1,
-            ),
-            centerTitle: false,
-          ),
-          body: BlocBuilder<ModuleCubit,DataState>(
-              builder: (BuildContext context, DataState state) {
-                if(state is DataLoaded<Module>){
-                  return SafeArea(
-                    child: CustomScrollView(
-                      slivers: [
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 5.h,horizontal: 20.w),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Center(
-                                child: Material(
-                                  elevation: 5,
-                                  color: Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10.r),
-                                  child: Container(
-                                    height: Responsive.isTablet? 300.h : 250.h,
-                                    decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10.r),
-                                        image: DecorationImage(
-                                            image: NetworkImage(state.data.moduleImage),
-                                            fit: BoxFit.fill
-                                        )
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(height: 20.h,),
-                              Text(state.data.moduleTitle,
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontSize: 20.sp
-                                ),
-                              ),
-                              SizedBox(height: 15.h,),
-                              Row(
-                                children: [
-                                  Container(
-                                    height: 40.h,
-                                    width: 40.w,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.green.shade100,
-                                    ),
-                                    child: Icon(
-                                      Icons.person,
-                                      color: Colors.green.shade700,
-                                      size: 24.sp,
-                                    ),
-                                  ),
-                                  10.horizontalSpace,
-                                  Opacity(
-                                    opacity: 0.5,
-                                    child: Text('Edu Garcia',
-                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                        fontSize: 16.sp,
-                                      ),
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: 15.h,),
+    final textTheme = Theme.of(context).textTheme;
 
-                              // Pricing section - only show if not already owned
-                              if (!state.data.alreadyOwned && (state.data.originalPrice != null || state.data.discountedPrice != null)) ...[
-                                Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(12.r),
-                                    border: Border.all(color: Colors.green.shade200),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.local_offer,
-                                        color: Colors.green.shade700,
-                                        size: 24.sp,
-                                      ),
-                                      SizedBox(width: 12.w),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          if (state.data.discountedPrice != null) ...[
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  '\$${state.data.discountedPrice}',
-                                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                                    fontSize: 24.sp,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.green.shade700,
-                                                  ),
-                                                ),
-                                                SizedBox(width: 8.w),
-                                                if (state.data.originalPrice != null)
-                                                  Text(
-                                                    '\$${state.data.originalPrice}',
-                                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                                      fontSize: 16.sp,
-                                                      decoration: TextDecoration.lineThrough,
-                                                      color: Colors.grey,
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ] else if (state.data.originalPrice != null) ...[
-                                            Text(
-                                              '\$${state.data.originalPrice}',
-                                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                                fontSize: 24.sp,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.green.shade700,
+    return BlocProvider(
+      create: (context) => ModuleDetailCubit()..loadData(widget.moduleId),
+      child: Scaffold(
+        backgroundColor: AppColor.background,
+        appBar: AppBar(
+          backgroundColor: AppColor.background,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColor.text),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            widget.moduleTitle != null && widget.moduleTitle!.isNotEmpty
+                ? Convert.toTitleCase(widget.moduleTitle!)
+                : (localizations?.translate('modules') ?? 'Module Details'),
+            style: textTheme.titleSmall?.copyWith(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.bold,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          centerTitle: false,
+        ),
+        body: BlocBuilder<ModuleDetailCubit, DataState>(
+          builder: (context, state) {
+            if (state is DataLoading) {
+              return const Center(child: Loader());
+            } else if (state is DataLoaded<ModuleDetailModel>) {
+              final module = state.data;
+              final displayTitle = module.title.isNotEmpty ? module.title : (widget.moduleTitle ?? '');
+              final int count = module.videosCount;
+              final String videoCountText = count == 1 ? '1 video' : '$count videos';
+
+              return SafeArea(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Thumbnail Image Container
+                            Center(
+                              child: Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(15.r),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.1),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(15.r),
+                                  child: AspectRatio(
+                                    aspectRatio: 16 / 9,
+                                    child: module.fullThumbnailUrl.isNotEmpty
+                                        ? CachedNetworkImage(
+                                            imageUrl: module.fullThumbnailUrl,
+                                            fit: BoxFit.cover,
+                                            placeholder: (context, url) => const CustomShimmer(),
+                                            errorWidget: (context, url, error) => Container(
+                                              color: AppColor.secondary,
+                                              child: const Icon(
+                                                Icons.image,
+                                                color: AppColor.text,
+                                                size: 40,
                                               ),
                                             ),
-                                          ],
-                                          SizedBox(height: 4.h),
-                                          Text(
-                                            localizations?.translate('lifetime_access') ?? 'Lifetime access',
-                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                              fontSize: 12.sp,
-                                              color: Colors.grey.shade700,
+                                          )
+                                        : Container(
+                                            color: AppColor.secondary,
+                                            child: const Icon(
+                                              Icons.image,
+                                              color: AppColor.text,
+                                              size: 40,
                                             ),
                                           ),
-                                        ],
-                                      ),
-                                      const Spacer(),
-                                      ElevatedButton(
-                                        onPressed: () {
-                                          // TODO: Handle purchase
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green.shade700,
-                                          foregroundColor: Colors.white,
-                                          padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(8.r),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          localizations?.translate('buy_now') ?? 'Buy Now',
-                                          style: TextStyle(
-                                            fontSize: 14.sp,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
                                   ),
                                 ),
-                                SizedBox(height: 15.h),
-                              ],
+                              ),
+                            ),
 
-                              ModuleDescription(description: state.data.moduleDes??''),
+                            // Spacing Top for Video Count
+                            SizedBox(height: 24.h),
 
-                              SizedBox(height: 10.h,),
-                              const Divider(),
-                              SizedBox(height: 10.h,),
-
-                              // Show syllabus count and total lessons
-                              if (state.data.syllabus != null && state.data.syllabus!.isNotEmpty) ...[
-                                Row(
-                                  children: [
-                                    Icon(Icons.list_alt,size: 30.sp,),
-                                    SizedBox(width: 10.w,),
-                                    Text(localizations?.courseContent ?? "Course Content",
-                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          fontSize: 16.sp,
-                                          color: Colors.green.shade700,
-                                          fontWeight: FontWeight.bold
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Opacity(
-                                      opacity: 0.5,
-                                      child: Text(localizations?.translate('videos_count', params: {'count': '${_getTotalLessons(state.data)}'}) ?? "${_getTotalLessons(state.data)} videos",
-                                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          fontSize: 16.sp,
-                                        ),
-                                      ),
-                                    ),
-
-                                  ],
+                            // Video count in center (no icon)
+                            Center(
+                              child: Text(
+                                videoCountText,
+                                textAlign: TextAlign.center,
+                                style: textTheme.titleSmall?.copyWith(
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColor.text.withValues(alpha: 0.65),
                                 ),
-                                SizedBox(height: 10.h,)
-                              ] else if (state.data.lessons != null && state.data.lessons!.isNotEmpty) ...[
-                                Row(
-                                  children: [
-                                    Icon(Icons.list_alt,size: 30.sp,),
-                                    SizedBox(width: 10.w,),
-                                    Text(localizations?.courseContent ?? "Course Content",
-                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          fontSize: 16.sp,
-                                          color: Colors.green.shade700,
-                                          fontWeight: FontWeight.bold
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Opacity(
-                                      opacity: 0.5,
-                                      child: Text(localizations?.translate('videos_count', params: {'count': '${state.data.lessonCount ?? state.data.lessons!.length}'}) ?? "${state.data.lessonCount ?? state.data.lessons!.length} videos",
-                                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          fontSize: 16.sp,
-                                        ),
-                                      ),
-                                    ),
+                              ),
+                            ),
 
-                                  ],
+                            // Spacing Bottom for Video Count
+                            SizedBox(height: 20.h),
+
+                            // Light grey line below video count
+                            Divider(
+                              color: Colors.grey.shade300,
+                              thickness: 1,
+                              height: 1,
+                            ),
+
+                            // Spacing Top for Description
+                            SizedBox(height: 24.h),
+
+                            // Description Section (left aligned)
+                            if (module.description != null && module.description!.isNotEmpty) ...[
+                              Text(
+                                localizations?.translate('description') ?? 'Description',
+                                style: textTheme.titleSmall?.copyWith(
+                                  fontSize: 18.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColor.text,
                                 ),
-                                SizedBox(height: 10.h,)
-                              ],
+                              ),
+
+                              // Spacing between Description title and Description value
+                              SizedBox(height: 14.h),
+
+                              Text(
+                                module.description!,
+                                style: textTheme.bodyMedium?.copyWith(
+                                  fontSize: 15.sp,
+                                  color: AppColor.text.withValues(alpha: 0.8),
+                                  height: 1.6,
+                                ),
+                              ),
+
+                              // Spacing Bottom for Description value
+                              SizedBox(height: 30.h),
                             ],
-                          ),
+                          ],
                         ),
                       ),
+                    ),
 
-                      // Show syllabus sections if available, otherwise show lessons
-                      if (state.data.syllabus != null && state.data.syllabus!.isNotEmpty)
-                        SliverPadding(
-                          padding: EdgeInsets.symmetric(horizontal: 20.w),
-                          sliver: SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index){
-                                final syllabusId = state.data.syllabus![index].syllabusId;
-                                final isLoading = context.read<ModuleCubit>().isLoadingLessons(syllabusId);
-                                return SyllabusSection(
-                                  syllabus: state.data.syllabus![index],
-                                  index: index,
-                                  isLoadingMore: isLoading,
-                                  onPlayLesson: (lesson) => _onPlayLesson(lesson),
-                                  onLoadMore: () {
-                                    // Load more lessons for this syllabus
-                                    context.read<ModuleCubit>().loadMoreLessons(syllabusId);
-                                  },
-                                );
-                              },
-                              childCount: state.data.syllabus!.length,
-                            ),
+                    // Start Video Button at the bottom
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 15.h),
+                      decoration: BoxDecoration(
+                        color: AppColor.background,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            offset: const Offset(0, -2),
+                            blurRadius: 6,
                           ),
-                        )
-                      else if (state.data.lessons != null && state.data.lessons!.isNotEmpty)
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                                (context, index){
-                              final lesson = state.data.lessons![index];
-                              return ModuleLesson(
-                                  index: index,
-                                  onTap: () => _onPlayLesson(lesson),
-                                lesson: lesson,
-                              );
-                            },
-                            childCount: state.data.lessons!.length,
-                          ),
+                        ],
+                      ),
+                      child: AuthBtn(
+                        text: localizations?.translate('start_video') ?? 'Start Video',
+                        width: double.infinity,
+                        bgColor: AppColor.primary,
+                        textColor: AppColor.background,
+                        onTap: () {
+                          if (!TokenApi.isUserLoggedIn()) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const TrainingAuthPromptScreen(),
+                              ),
+                            );
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ModuleLessonsScreen(
+                                  moduleId: module.id > 0 ? module.id : widget.moduleId,
+                                  moduleTitle: displayTitle,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            } else if (state is DataLoadFailed) {
+              return Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24.w),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
+                      SizedBox(height: 12.h),
+                      Text(
+                        state.error?.toString() ?? 'Failed to load module details',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 15.sp, color: Colors.grey.shade700),
+                      ),
+                      SizedBox(height: 16.h),
+                      ElevatedButton(
+                        onPressed: () => context.read<ModuleDetailCubit>().loadData(widget.moduleId),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColor.primary,
+                          foregroundColor: AppColor.background,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r)),
                         ),
-
-                      // Add bottom padding for SafeArea
-                      SliverPadding(
-                        padding: EdgeInsets.only(bottom: 20.h),
+                        child: Text(localizations?.translate('retry') ?? 'Retry'),
                       ),
                     ],
-                    ),
-                  );
-                }
-                else if(state is DataLoading){
-                  return const Center(child: Loader());
-                }
-                return const SizedBox();
-              },
-            ),
-        )
+                  ),
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
     );
   }
-
-  // Helper method to calculate total lessons from all syllabus
-  int _getTotalLessons(Module module) {
-    if (module.syllabus != null && module.syllabus!.isNotEmpty) {
-      return module.syllabus!.fold(0, (total, syllabus) {
-        return total + (syllabus.lessonCount ?? syllabus.lessons?.length ?? 0);
-      });
-    }
-    return module.lessonCount ?? module.lessons?.length ?? 0;
-  }
 }
-

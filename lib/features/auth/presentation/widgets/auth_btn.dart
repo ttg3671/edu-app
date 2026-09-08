@@ -31,7 +31,7 @@ class AuthBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveBgColor = bgColor ?? AppColor.primary;
-    final effectiveTextColor = textColor ?? Colors.white;
+    final effectiveTextColor = textColor ?? AppColor.background;
     final showBorder = hasBorder ?? false;
 
     return isLoading??false?
@@ -40,7 +40,7 @@ class AuthBtn extends StatelessWidget {
       width: width,
       child: Material(
         elevation: showBorder ? 0 : 5,
-        shadowColor: AppColor.gradient2,
+        shadowColor: Colors.black.withOpacity(0.3),
         color: effectiveBgColor,
         borderRadius: BorderRadius.circular(30.r),
         child: Container(

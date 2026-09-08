@@ -9,12 +9,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../../../../core/common/widgets/loader.dart';
 import '../../../../core/cubit_states/data_state.dart';
 import '../../../../screens/video/landscape_video.dart';
 import '../widget/module_description.dart';
 import '../widget/module_lesson.dart';
 import '../../../../l10n/app_localizations.dart';
+import '../../../../core/utils/custom_snackbar.dart';
+import '../../../../core/theme/app_color.dart';
 
 class LessonDetails extends StatelessWidget {
   final int lessonId;
@@ -31,9 +32,15 @@ class LessonDetails extends StatelessWidget {
           BlocProvider(create: (create)=>VideoOrientationCubit()),
         ],
         child: BlocBuilder<VideoOrientationCubit,Orientation>(
-          builder: (BuildContext context, Orientation state) {
-            if(state== Orientation.landscape){
-              return const LandscapeVideo(isTrailer: false,);
+          builder: (BuildContext context, Orientation orientation) {
+            String? videoUrl;
+            final lessonState = context.read<LessonCubit>().state;
+            if (lessonState is DataLoaded<Lesson>) {
+              videoUrl = lessonState.data.lessonVideo;
+            }
+
+            if(orientation == Orientation.landscape){
+              return LandscapeVideo(isTrailer: false, videoUrl: videoUrl,);
             }
             SystemChrome.setPreferredOrientations([
               DeviceOrientation.portraitUp,
@@ -44,7 +51,15 @@ class LessonDetails extends StatelessWidget {
                 bottom: false,
                 child: Column(
                   children: [
-                    const PortraitPlayer(),
+                    BlocBuilder<LessonCubit, DataState>(
+                      builder: (context, state) {
+                        String? currentUrl;
+                        if (state is DataLoaded<Lesson>) {
+                          currentUrl = state.data.lessonVideo;
+                        }
+                        return PortraitPlayer(videoUrl: currentUrl);
+                      },
+                    ),
                     Expanded(
                       child: BlocConsumer<LessonCubit,DataState>(
                         builder: (BuildContext context, DataState state) {
@@ -84,15 +99,24 @@ class LessonDetails extends StatelessWidget {
                                 SliverList(
                                   delegate: SliverChildBuilderDelegate(
                                         (context, index){
+                                      final nextLesson = state.data.upNext![index];
                                       return ModuleLesson(
                                         index: index,
                                         onTap: (){
+                                          if (nextLesson.isComingSoon) {
+                                            CustomSnackBar.show(
+                                              context: context,
+                                              message: localizations?.comingSoonStayTuned ?? 'Coming Soon! Stay tuned.',
+                                              color: AppColor.primary,
+                                            );
+                                            return;
+                                          }
                                           Navigator.pushReplacement(context, MaterialPageRoute(builder: (builder)=>
-                                              LessonDetails(lessonId: state.data.upNext![index].lessonId))
+                                              LessonDetails(lessonId: nextLesson.lessonId))
                                           );
                                         },
                                         padding: EdgeInsets.symmetric(vertical:10.h, horizontal: 10.w),
-                                        lesson: state.data.upNext![index],
+                                        lesson: nextLesson,
                                       );
                                     },
                                     childCount: state.data.upNext?.length??0,

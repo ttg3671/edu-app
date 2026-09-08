@@ -9,13 +9,13 @@ class LinearGradientMask extends StatelessWidget {
   Widget build(BuildContext context) {
     return ShaderMask(
       shaderCallback: (bounds) {
-        return const RadialGradient(
-          center: Alignment.topLeft,
-          radius: 1,
+        return const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: [
-            AppColor.gradient1,AppColor.gradient2,
+            AppColor.primary,
+            Color(0xFFFFD700), // Gold/Lighter yellow
           ],
-          tileMode: TileMode.mirror,
         ).createShader(bounds);
       },
       child: child,

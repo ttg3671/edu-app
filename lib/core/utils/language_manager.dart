@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LanguageManager {
   static const String _languageKey = 'selected_language';
-  static const String _defaultLanguage = 'en';
+  static const String _defaultLanguage = 'es';
 
   // Get saved language code
   static Future<String> getLanguageCode() async {
@@ -31,20 +31,20 @@ class LanguageManager {
   // Get supported locales
   static List<Locale> getSupportedLocales() {
     return [
-      const Locale('en'), // English
       const Locale('es'), // Spanish
+      const Locale('en'), // English
     ];
   }
 
   // Get language name from code
   static String getLanguageName(String languageCode) {
     switch (languageCode) {
-      case 'en':
-        return 'English';
       case 'es':
         return 'Español';
-      default:
+      case 'en':
         return 'English';
+      default:
+        return 'Español';
     }
   }
 

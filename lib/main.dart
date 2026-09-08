@@ -1,35 +1,68 @@
-import 'package:edu_gym/api/api.dart';
+import 'dart:io';
+
+import 'package:edu_gym/api/deep_link_service.dart';
+import 'package:edu_gym/api/socket_service.dart';
 import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/core/common/constant/image_constant.dart';
 import 'package:edu_gym/core/common/widgets/linear_gradient_mask.dart';
 import 'package:edu_gym/features/account/presentation/cubit/account_cubit.dart';
 import 'package:edu_gym/features/account/presentation/screens/account.dart';
 import 'package:edu_gym/features/search/presentation/screens/search.dart';
-import 'package:edu_gym/modal/user_details.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/theme/theme.dart';
+import 'core/theme/app_color.dart';
+import 'core/utils/device_util.dart';
 import 'cubits/navigation_cubit.dart';
 import 'cubits/pageview_cubit.dart';
 import 'cubits/language_cubit.dart';
 import 'features/home/presentation/cubit/new_home_cubit.dart';
 import 'features/home/presentation/screen/new_home_screen.dart';
+import 'features/home/presentation/screen/continue_watching_screen.dart';
 import 'features/search/presentation/cubit/search_cubit.dart';
-import 'features/auth/presentation/pages/login.dart';
 import 'features/auth/presentation/pages/starting_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:edu_gym/services/notification_service.dart';
 import 'l10n/app_localizations.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase & Push Notifications
+  try {
+    await Firebase.initializeApp();
+    await NotificationService().init();
+  } catch (e) {
+    debugPrint('Firebase/Notification initialization error: $e');
+  }
+
   await TokenApi.clearOnFreshInstall();
-  await TokenApi.getCookie();
+  await TokenApi.loadStoredData();
+
+  // Initialize Deep Linking
+  DeepLinkService().init();
+
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      final options = GoogleCastOptionsAndroid(
+        appId: GoogleCastDiscoveryCriteria.kDefaultApplicationId,
+      );
+      await GoogleCastContext.instance.setSharedInstanceWithOptions(options);
+    } catch (e) {
+      debugPrint('Error initializing Google Cast: $e');
+    }
+  }
+
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.white,
+    statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
   ));
   runApp(const MyApp());
@@ -42,39 +75,89 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   bool _isLoggedIn = false;
-  bool _isLoading = true;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _isLoggedIn = TokenApi.isUserLoggedIn();
     _checkAuthStatus();
   }
 
-  Future<void> _checkAuthStatus() async {
-    // Check if user has valid authentication
-    final isLoggedIn = TokenApi.isUserLoggedIn();
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    DeepLinkService().dispose();
+    super.dispose();
+  }
 
-    // Also verify the token is still valid
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // print("🚀 App Resumed - Reconnecting Socket and Refreshing Data");
+      // Force socket to reconnect if user is logged in
+      if (TokenApi.isUserLoggedIn()) {
+        SocketService().socket?.connect();
+        
+        // Refresh account details globally
+        try {
+          final context = navigatorKey.currentContext;
+          if (context != null) {
+            context.read<AccountCubit>().getAccountDetails();
+            context.read<NewHomeCubit>().loadHome();
+          }
+        } catch (e) {
+          debugPrint('Error refreshing account on resume: $e');
+        }
+      }
+    }
+  }
+
+  Future<void> _checkAuthStatus() async {
+    final isLoggedIn = TokenApi.isUserLoggedIn();
     if (isLoggedIn) {
-      final token = await TokenApi().getAccessToken();
-      setState(() {
-        _isLoggedIn = token != null && token.isNotEmpty;
-        _isLoading = false;
-      });
+      final deviceId = await DeviceUtil.getDeviceId();
+      SocketService().initSocket(deviceId);
+      
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = true;
+          _isLoading = false;
+        });
+      }
+      
+      // Proactively refresh token in background
+      TokenApi().getAccessToken();
     } else {
-      setState(() {
-        _isLoggedIn = false;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = false;
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => LanguageCubit(),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (context) => LanguageCubit()),
+        BlocProvider(create: (context) => NavigationCubit()),
+        BlocProvider(create: (context) => NewHomeCubit()..loadHome()),
+        BlocProvider(create: (context) {
+          final cubit = AccountCubit();
+          if (TokenApi.isUserLoggedIn()) {
+            cubit.getAccountDetails();
+          }
+          return cubit;
+        }),
+        BlocProvider(create: (context) => SearchCubit()..loadPrefs()),
+        BlocProvider(create: (context) => PageViewCubit()),
+      ],
       child: BlocBuilder<LanguageCubit, Locale>(
         builder: (context, locale) {
           return ScreenUtilInit(
@@ -83,13 +166,14 @@ class _MyAppState extends State<MyApp> {
             splitScreenMode: true,
             builder: (_, child) {
               return MaterialApp(
+                navigatorKey: navigatorKey,
                 debugShowCheckedModeBanner: false,
-                title: 'Edu Gym',
+                title: 'EduMovimiento',
                 theme: lightTheme,
                 locale: locale,
                 supportedLocales: const [
-                  Locale('en'), // English
-                  Locale('es'), // Spanish
+                  Locale('es'),
+                  Locale('en'),
                 ],
                 localizationsDelegates: const [
                   AppLocalizations.delegate,
@@ -107,7 +191,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                   )
                 : _isLoggedIn
-                    ? MyHomePage()
+                    ? const MyHomePage()
                     : const StartingScreen(),
           );
         },
@@ -117,93 +201,139 @@ class _MyAppState extends State<MyApp> {
 }
 
 class MyHomePage extends StatelessWidget {
-  // ✅ Using New Home screen with your real API
-  final List<Widget> list = [const NewHomeScreen(), const Search(), const Account()];
-
-  MyHomePage({super.key});
+  const MyHomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
-    // SystemChrome.setPreferredOrientations([
-    //   DeviceOrientation.portraitUp,
-    // ]);
-    // Api.instance.login(email: 'email', password: 'password');
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(create: (create)=>NavigationCubit()),
-        BlocProvider(create: (create)=>NewHomeCubit()..loadHome()),
-        BlocProvider(create: (create){
-          final cubit = AccountCubit();
-          // Only fetch account details if user is logged in
-          if(TokenApi.isUserLoggedIn()){
-            cubit.getAccountDetails();
-          }
-          return cubit;
-        }),
-        BlocProvider(create: (create)=>SearchCubit()..loadPrefs()),
-        BlocProvider(create: (create)=>PageViewCubit()),
-      ],
-      child: BlocBuilder<NavigationCubit,int>(
-        builder: (context,index){
-          return Scaffold(
-            body: SafeArea(
-              child: IndexedStack(
-                  index: index,
-                  children: list
-              ),
+    final bool isLoggedIn = TokenApi.isUserLoggedIn();
+
+    final List<Widget> screens = isLoggedIn
+        ? [
+            const NewHomeScreen(),
+            const Search(),
+            const ContinueWatchingScreen(isFromBottomNav: true),
+            const Account(),
+          ]
+        : [
+            const NewHomeScreen(),
+            const Search(),
+            const Account(),
+          ];
+
+    return BlocBuilder<NavigationCubit, int>(
+      builder: (context, index) {
+        final safeIndex = index >= screens.length ? 0 : index;
+
+        return Scaffold(
+          body: SafeArea(
+            child: IndexedStack(
+              index: safeIndex,
+              children: screens,
             ),
-            bottomNavigationBar: BottomNavigationBar(
-              items: [
-                BottomNavigationBarItem(
-                    icon: LinearGradientMask(
-                      child: SvgPicture.asset(
-                        SvgConstant.home,
-                        colorFilter: ColorFilter.mode(
-                          _getItemColor(index, 0),
-                            BlendMode.srcIn
+          ),
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: AppColor.primary,
+            unselectedItemColor: Colors.grey,
+            items: isLoggedIn
+                ? [
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: SvgPicture.asset(
+                          SvgConstant.home,
+                          colorFilter: ColorFilter.mode(
+                            _getItemColor(safeIndex, 0),
+                            BlendMode.srcIn,
+                          ),
                         ),
                       ),
+                      label: localizations?.home ?? "Home",
                     ),
-                    label: localizations?.home ?? "Home"
-                ),
-                BottomNavigationBarItem(
-                    icon: LinearGradientMask(
-                      child: SvgPicture.asset(
-                        SvgConstant.search,
-                        colorFilter: ColorFilter.mode(
-                            _getItemColor(index, 1),
-                            BlendMode.srcIn
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: SvgPicture.asset(
+                          SvgConstant.search,
+                          colorFilter: ColorFilter.mode(
+                            _getItemColor(safeIndex, 1),
+                            BlendMode.srcIn,
+                          ),
                         ),
                       ),
+                      label: localizations?.search ?? "Search",
                     ),
-                    label: localizations?.search ?? "Search"
-                ),
-                BottomNavigationBarItem(
-                    icon: LinearGradientMask(
-                      child: SvgPicture.asset(
-                        SvgConstant.profile,
-                        colorFilter: ColorFilter.mode(
-                            _getItemColor(index, 2),
-                            BlendMode.srcIn
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: Icon(
+                          Icons.history_rounded,
+                          size: 24.sp,
+                          color: _getItemColor(safeIndex, 2),
                         ),
                       ),
+                      label: localizations?.history ?? "History",
                     ),
-                    label: localizations?.profile ?? "Profile"
-                ),
-              ],
-              currentIndex: index,
-              onTap: (index){
-                context.read<NavigationCubit>().changeIndex(index);
-              },
-            ),
-          );
-        },
-      ),
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: SvgPicture.asset(
+                          SvgConstant.profile,
+                          colorFilter: ColorFilter.mode(
+                            _getItemColor(safeIndex, 3),
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                      label: localizations?.profile ?? "Profile",
+                    ),
+                  ]
+                : [
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: SvgPicture.asset(
+                          SvgConstant.home,
+                          colorFilter: ColorFilter.mode(
+                            _getItemColor(safeIndex, 0),
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                      label: localizations?.home ?? "Home",
+                    ),
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: SvgPicture.asset(
+                          SvgConstant.search,
+                          colorFilter: ColorFilter.mode(
+                            _getItemColor(safeIndex, 1),
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                      label: localizations?.search ?? "Search",
+                    ),
+                    BottomNavigationBarItem(
+                      icon: LinearGradientMask(
+                        child: SvgPicture.asset(
+                          SvgConstant.profile,
+                          colorFilter: ColorFilter.mode(
+                            _getItemColor(safeIndex, 2),
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                      label: localizations?.profile ?? "Profile",
+                    ),
+                  ],
+            currentIndex: safeIndex,
+            onTap: (newIndex) {
+              context.read<NavigationCubit>().changeIndex(newIndex);
+            },
+          ),
+        );
+      },
     );
   }
 
-  Color _getItemColor(int currentIndex, int itemIndex){
-    return currentIndex==itemIndex? Colors.blue : Colors.grey;
+  Color _getItemColor(int currentIndex, int itemIndex) {
+    return currentIndex == itemIndex ? AppColor.primary : Colors.grey;
   }
 }

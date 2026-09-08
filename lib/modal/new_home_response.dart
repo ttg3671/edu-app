@@ -1,3 +1,5 @@
+import 'package:edu_gym/api/api.dart';
+
 class NewHomeResponse {
   final bool isSuccess;
   final NewHomeData data;
@@ -122,6 +124,7 @@ class InitialData {
       navPillId: json['nav_pill_id'] ?? 0,
       sections: (json['sections'] as List<dynamic>?)
               ?.map((e) => NewHomeSection.fromJson(e as Map<String, dynamic>))
+              .where((section) => section.modules.isNotEmpty)
               .toList() ??
           [],
       nextCursor: json['nextCursor'],
@@ -188,21 +191,55 @@ class NewHomeModule {
   });
 
   factory NewHomeModule.fromJson(Map<String, dynamic> json) {
+    final rawThumbnail = json['thumbnail_url'] ?? '';
+
     return NewHomeModule(
-      id: json['id'] ?? 0,
-      title: json['title'] ?? '',
-      thumbnailUrl: json['thumbnail_url'] ?? '',
-      isFree: json['is_free'] ?? 0,
-      collectionId: json['collection_id'] ?? 0,
-      position: json['position'] ?? 0,
-      rankCount: json['rank_count'] ?? 0,
+      id: json['id'] is int
+          ? json['id']
+          : (int.tryParse(json['id']?.toString() ?? json['module_id']?.toString() ?? '0') ?? 0),
+      title: json['title']?.toString() ?? json['module_title']?.toString() ?? json['name']?.toString() ?? '',
+      thumbnailUrl: rawThumbnail.toString(),
+      isFree: json['is_free'] is int
+          ? json['is_free']
+          : (json['is_free'] == true || json['is_free'] == '1' || json['is_free'] == null ? 1 : 0),
+      collectionId: json['collection_id'] is int
+          ? json['collection_id']
+          : (int.tryParse(json['collection_id']?.toString() ?? '0') ?? 0),
+      position: json['position'] is int
+          ? json['position']
+          : (int.tryParse(json['position']?.toString() ?? '0') ?? 0),
+      rankCount: json['rank_count'] is int
+          ? json['rank_count']
+          : (int.tryParse(json['rank_count']?.toString() ?? '0') ?? 0),
     );
   }
 
-  static const String imgBaseUrl = 'https://admin.edugarciamovimiento.com/fitness/uploads';
+  static const String imgBaseUrl = Api.imgBaseUrl;
+
+  String get thumbnail => thumbnailUrl;
 
   String get fullThumbnailUrl {
-    if (thumbnailUrl.startsWith('http')) return thumbnailUrl;
-    return '$imgBaseUrl/$thumbnailUrl';
+    if (thumbnailUrl.isEmpty) return '';
+    if (thumbnailUrl.startsWith('http://') || thumbnailUrl.startsWith('https://')) {
+      return thumbnailUrl;
+    }
+    final cleanPath = thumbnailUrl.startsWith('/') ? thumbnailUrl.substring(1) : thumbnailUrl;
+    final base = Api.imgBaseUrl.endsWith('/')
+        ? Api.imgBaseUrl.substring(0, Api.imgBaseUrl.length - 1)
+        : Api.imgBaseUrl;
+    return '$base/$cleanPath';
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'thumbnail_url': thumbnailUrl,
+      'thumbnail': thumbnailUrl,
+      'is_free': isFree,
+      'collection_id': collectionId,
+      'position': position,
+      'rank_count': rankCount,
+    };
   }
 }

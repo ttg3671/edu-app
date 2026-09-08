@@ -1,8 +1,5 @@
-import 'package:edu_gym/api/api.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'auth_cubit.dart';
 
 class PasswordCubit extends Cubit<PasswordState>{
   bool _isVisible=false;

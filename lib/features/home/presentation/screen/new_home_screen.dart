@@ -1,12 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:edu_gym/api/token_api.dart';
+import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:edu_gym/core/common/widgets/custom_shimmer.dart';
 import 'package:edu_gym/core/cubit_states/data_state.dart';
-import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:edu_gym/cubits/navigation_cubit.dart';
 import 'package:edu_gym/features/auth/presentation/pages/starting_screen.dart';
 import 'package:edu_gym/features/home/presentation/cubit/new_home_cubit.dart';
 import 'package:edu_gym/features/home/presentation/widget/home_shimmer_loading.dart';
 import 'package:edu_gym/features/module/presentation/screens/module_details.dart';
+import 'package:edu_gym/features/module/presentation/screens/module_lessons_screen.dart';
 import 'package:edu_gym/modal/new_home_response.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -65,7 +67,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               return Container(
               height: MediaQuery.of(context).size.height * 0.6,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColor.background,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(20.r),
                   topRight: Radius.circular(20.r),
@@ -80,7 +82,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.close),
+                          icon: Icon(Icons.close, color: AppColor.text),
                           onPressed: () => Navigator.pop(context),
                         ),
                         Text(
@@ -88,6 +90,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                           style: TextStyle(
                             fontSize: 20.sp,
                             fontWeight: FontWeight.bold,
+                            color: AppColor.text,
                           ),
                         ),
                         TextButton(
@@ -100,7 +103,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                           child: Text(
                             'Reset All',
                             style: TextStyle(
-                              color: Colors.black,
+                              color: AppColor.primary,
                               fontSize: 16.sp,
                               fontWeight: FontWeight.w600,
                             ),
@@ -109,7 +112,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                       ],
                     ),
                   ),
-                  Divider(height: 1, color: Colors.grey.shade300),
+                  Divider(height: 1, color: AppColor.secondary),
                   
                   Expanded(
                     child: ListView.builder(
@@ -127,6 +130,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                                 style: TextStyle(
                                   fontSize: 18.sp,
                                   fontWeight: FontWeight.bold,
+                                  color: AppColor.text,
                                 ),
                               ),
                             ),
@@ -179,17 +183,17 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                                         horizontal: 20.w,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: isSelected ? Colors.black : Colors.grey.shade100,
+                                        color: isSelected ? Colors.black : AppColor.secondary,
                                         borderRadius: BorderRadius.circular(10.r),
                                         border: Border.all(
-                                          color: isSelected ? Colors.black : Colors.grey.shade300,
+                                          color: isSelected ? Colors.black : Colors.transparent,
                                         ),
                                       ),
                                       alignment: Alignment.center,
                                       child: Text(
                                         isShowAll ? 'Show All' : _capitalizeFirstWord(cat!.name),
                                         style: TextStyle(
-                                          color: isSelected ? Colors.white : Colors.black,
+                                          color: isSelected ? Colors.white : AppColor.text,
                                           fontSize: 16.sp,
                                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                         ),
@@ -238,26 +242,30 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.black),
-                          onPressed: () {
-                            // Navigate back to starting screen
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (context) => StartingScreen()),
-                              (route) => false,
-                            );
-                          },
-                        ),
+                        if (!TokenApi.isUserLoggedIn())
+                          IconButton(
+                            icon: Icon(Icons.close, color: AppColor.text),
+                            onPressed: () {
+                              // Navigate back to starting screen
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(builder: (context) => const StartingScreen()),
+                                (route) => false,
+                              );
+                            },
+                          )
+                        else
+                          SizedBox(width: 48.w),
                         Text(
                           'EXPLORE',
                           style: TextStyle(
                             fontSize: 22.sp,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 2,
+                            color: AppColor.text,
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.search, color: Colors.black),
+                          icon: Icon(Icons.search, color: AppColor.text),
                           onPressed: () {
                             // Navigate to search
                             context.read<NavigationCubit>().changeIndex(1);
@@ -275,10 +283,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     child: Row(
                       children: [
                         // Filter Button
-                        IconButton(
-                          padding: EdgeInsets.only(left: 20.w),
-                          icon: const Icon(Icons.tune),
-                          onPressed: () => _showFilterBottomSheet(homeData.filterArray),
+                        _FilterButton(
+                          onTap: () => _showFilterBottomSheet(homeData.filterArray),
                         ),
                         
                         // Pills
@@ -292,29 +298,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                               itemBuilder: (context, index) {
                                 final pill = pills[index];
                                 final isSelected = homeData.initialData.navPillId == pill.id;
-                                return GestureDetector(
+                                return _NavPillItem(
+                                  name: pill.name,
+                                  isSelected: isSelected,
                                   onTap: () {
                                     context.read<NewHomeCubit>().selectPill(pill.id);
                                   },
-                                  child: Container(
-                                    margin: EdgeInsets.only(right: 10.w),
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 15.w,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isSelected ? Colors.black : Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(10.r),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      pill.name.toUpperCase(),
-                                      style: TextStyle(
-                                        color: isSelected ? Colors.white : Colors.black,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15.sp,
-                                      ),
-                                    ),
-                                  ),
                                 );
                               },
                             ),
@@ -326,22 +315,51 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 ),
 
                 // Sections
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final section = sections[index];
-                      return _buildSection(section);
-                    },
-                    childCount: sections.length,
-                  ),
-                ),
+                sections.isEmpty 
+                  ? SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.video_library_outlined, size: 80.sp, color: Colors.grey),
+                            SizedBox(height: 20.h),
+                            Text(
+                              'No content available in this section yet.',
+                              style: TextStyle(
+                                fontSize: 18.sp,
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(height: 10.h),
+                            Text(
+                              'Check back later for new updates!',
+                              style: TextStyle(
+                                fontSize: 14.sp,
+                                color: Colors.grey.shade400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final section = sections[index];
+                          return _buildSection(section);
+                        },
+                        childCount: sections.length,
+                      ),
+                    ),
 
                 // Bottom padding / loading more
                 if (homeData.initialData.hasMore)
                   const SliverToBoxAdapter(
                     child: Padding(
                       padding: EdgeInsets.all(20.0),
-                      child: Center(child: CircularProgressIndicator(color: Colors.black)),
+                      child: Center(child: CircularProgressIndicator(color: AppColor.primary)),
                     ),
                   )
                 else
@@ -352,7 +370,34 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             ),
           );
         } else if (state is DataLoadFailed) {
-          return Center(child: Text(state.error?.toString() ?? 'Error'));
+          final errorMessage = state.error?.toString() ?? 'Failed to load content';
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24.w),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
+                  SizedBox(height: 12.h),
+                  Text(
+                    errorMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 15.sp, color: Colors.grey.shade700),
+                  ),
+                  SizedBox(height: 16.h),
+                  ElevatedButton(
+                    onPressed: () => context.read<NewHomeCubit>().loadHome(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColor.primary,
+                      foregroundColor: AppColor.background,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r)),
+                    ),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
         return const SizedBox.shrink();
       },
@@ -371,6 +416,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               fontSize: 18.sp,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.2,
+              color: AppColor.text,
             ),
           ),
         ),
@@ -432,7 +478,7 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
             return Container(
               width: 100.w,
               alignment: Alignment.center,
-              child: const CircularProgressIndicator(color: Colors.black),
+              child: CircularProgressIndicator(color: AppColor.primary),
             );
           }
           final module = modules[index];
@@ -445,15 +491,27 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
   Widget _buildModuleCard(BuildContext context, NewHomeModule module) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ModuleDetails(
-              moduleId: module.id,
-              moduleTitle: module.title,
+        if (TokenApi.isUserLoggedIn()) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ModuleLessonsScreen(
+                moduleId: module.id,
+                moduleTitle: module.title,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ModuleDetails(
+                moduleId: module.id,
+                moduleTitle: module.title,
+              ),
+            ),
+          );
+        }
       },
       child: Container(
         width: 280.w,
@@ -465,17 +523,22 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
             child: Stack(
               children: [
                 // Image
-                CachedNetworkImage(
-                  imageUrl: module.fullThumbnailUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  placeholder: (context, url) => const CustomShimmer(),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.image),
-                  ),
-                ),
+                module.fullThumbnailUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: module.fullThumbnailUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        placeholder: (context, url) => const CustomShimmer(),
+                        errorWidget: (context, url, error) => Container(
+                          color: AppColor.secondary,
+                          child: const Icon(Icons.image, color: AppColor.text),
+                        ),
+                      )
+                    : Container(
+                        color: AppColor.secondary,
+                        child: const Icon(Icons.image, color: AppColor.text),
+                      ),
                 
                 // Gradient Overlay
                 Positioned.fill(
@@ -486,7 +549,7 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.7),
+                          AppColor.background.withOpacity(0.7),
                         ],
                         stops: const [0.6, 1.0],
                       ),
@@ -502,7 +565,7 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
                   child: Text(
                     module.title,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColor.text,
                       fontSize: 15.sp,
                       fontWeight: FontWeight.bold,
                       shadows: [
@@ -531,7 +594,7 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
                       ),
                       child: Icon(
                         Icons.lock,
-                        color: Colors.white,
+                        color: AppColor.primary,
                         size: 16.sp,
                       ),
                     ),
@@ -544,3 +607,92 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
     );
   }
 }
+
+class _NavPillItem extends StatefulWidget {
+  final String name;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _NavPillItem({
+    required this.name,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_NavPillItem> createState() => _NavPillItemState();
+}
+
+class _NavPillItemState extends State<_NavPillItem> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isActiveOrHovered = widget.isSelected || _isHovered;
+    final Color bgColor = isActiveOrHovered ? Colors.black : AppColor.secondary;
+    final Color textColor = isActiveOrHovered ? Colors.white : AppColor.text;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: EdgeInsets.only(right: 10.w),
+          padding: EdgeInsets.symmetric(
+            horizontal: 15.w,
+          ),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10.r),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            widget.name.toUpperCase(),
+            style: TextStyle(
+              color: textColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 15.sp,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _FilterButton({
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 40.h,
+          width: 40.h,
+          margin: EdgeInsets.only(left: 20.w),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(10.r),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.tune,
+            color: Colors.white,
+            size: 20.sp,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
