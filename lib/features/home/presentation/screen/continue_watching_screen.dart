@@ -653,7 +653,8 @@ class _ContinueWatchingScreenState extends State<ContinueWatchingScreen> with Wi
                             ),
                             SizedBox(width: 10.w),
                             Text(
-                              '${item.progressPercent}% watched',
+                              localizations?.translate('percent_watched', params: {'percent': '${item.progressPercent}'}) ??
+                                  '${item.progressPercent}% watched',
                               style: TextStyle(
                                 fontSize: 12.sp,
                                 color: AppColor.primary,

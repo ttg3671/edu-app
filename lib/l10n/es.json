@@ -230,5 +230,20 @@
   "months": "Meses",
   "year": "Año",
   "years": "Años",
-  "refresh_page_to_view_status": "Por favor actualiza la página para ver el estado de la suscripción"
+  "refresh_page_to_view_status": "Por favor actualiza la página para ver el estado de la suscripción",
+  "choose_your_plan": "Elige tu plan",
+  "choose_plan_subtitle": "Suscríbete para desbloquear este y todo el contenido premium",
+  "get_this_plan": "Obtener este plan",
+  "devices_included": "{count} dispositivos incluidos",
+  "per_month": "/mes",
+  "per_year": "/año",
+  "access_steps_sent": "Los pasos de acceso se enviaron a tu correo electrónico.",
+  "failed_to_load_plans": "No se pudieron cargar los planes",
+  "no_plans_available": "No hay planes disponibles en este momento",
+  "you_selected_plan": "Seleccionaste: {plan}",
+  "cast_to_device": "Transmitir a dispositivo",
+  "connected": "Conectado",
+  "disconnect": "Desconectar",
+  "searching_for_devices": "Buscando dispositivos...",
+  "percent_watched": "{percent}% visto"
 }

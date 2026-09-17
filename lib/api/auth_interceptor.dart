@@ -84,8 +84,18 @@ class AuthInterceptor extends Interceptor {
       return handler.next(options);
     }
 
-    // For logout: send both Cookie and Authorization (if available) so backend can clear session
+    // For logout: send both Cookie and Authorization (if available) so backend can clear session.
+    // getAccessToken() is called first because, if the access token is expired, it silently
+    // refreshes via /refresh - and the backend rotates the XXAFIT cookie on every refresh. Reading
+    // the cookie before that call could attach an already-rotated-out value to the logout request,
+    // which the backend would then fail to find in its session store.
     if (path.contains('/logout')) {
+      final accessToken = await TokenApi().getAccessToken();
+      if (accessToken != null && accessToken.isNotEmpty) {
+        options.headers['Authorization'] = 'Bearer $accessToken';
+        // print('🔑 [AuthInterceptor] Added Authorization header for logout');
+      }
+
       final rawCookie = await TokenApi.getCookie();
       final cookieHeader = TokenApi.formatCookieHeader(rawCookie);
       if (cookieHeader.isNotEmpty) {
@@ -93,12 +103,6 @@ class AuthInterceptor extends Interceptor {
         // print('🍪 [AuthInterceptor] Added Cookie header to logout: $cookieHeader');
       } else {
         // print('⚠️ [AuthInterceptor] Warning: No cookie found for logout request');
-      }
-
-      final accessToken = await TokenApi().getAccessToken();
-      if (accessToken != null && accessToken.isNotEmpty) {
-        options.headers['Authorization'] = 'Bearer $accessToken';
-        // print('🔑 [AuthInterceptor] Added Authorization header for logout');
       }
       return handler.next(options);
     }

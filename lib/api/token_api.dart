@@ -581,7 +581,12 @@ class TokenApi{
     TokenApi._reasonCode = null;
     TokenApi._maxDevices = null;
     TokenApi._resetToken = null;
+    // storage.deleteAll() wipes every secure-storage entry, including the
+    // Keychain-persisted device id (see DeviceUtil) — snapshot and restore
+    // it so logout doesn't reset the device identity.
+    final preservedDeviceId = await DeviceUtil.peekPersistedDeviceId();
     await storage.deleteAll();
+    await DeviceUtil.restoreSecureDeviceId(preservedDeviceId);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(authCookie);
@@ -735,7 +740,13 @@ class TokenApi{
     final hasLaunched = prefs.getBool(_firstLaunchKey);
 
     if (hasLaunched == null) {
+      // On a reinstall, the Keychain-persisted device id (iOS) survives the
+      // uninstall even though SharedPreferences does not, so `hasLaunched`
+      // looks fresh again here. Snapshot/restore it around the wipe so a
+      // reinstall doesn't get treated as a brand-new device.
+      final preservedDeviceId = await DeviceUtil.peekPersistedDeviceId();
       await storage.deleteAll();
+      await DeviceUtil.restoreSecureDeviceId(preservedDeviceId);
       await prefs.setBool(_firstLaunchKey, true);
     }
   }

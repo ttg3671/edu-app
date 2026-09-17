@@ -12,7 +12,7 @@ class TermsRichText extends StatelessWidget {
   Widget build(BuildContext context) {
     return RichText(
       text: TextSpan(
-          text: "By ${isLogin??false? 'logging in' : 'creating an account'}, you agree to the EduCardio",
+          text: "By ${isLogin??false? 'logging in' : 'creating an account'}, you agree to the EduMovimiento",
           style: Theme.of(context).textTheme.bodySmall,
           children: [
             TextSpan(
@@ -23,7 +23,7 @@ class TermsRichText extends StatelessWidget {
                 ),
                 recognizer: TapGestureRecognizer()
                   ..onTap= (){
-                    Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ShowWebView(link: 'https://glowbal.co.uk/terms.html')));
+                    Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ShowWebView(link: 'https://www.edugarciamovimiento.com/terminos-y-condiciones')));
                   }
             ),
             TextSpan(
@@ -38,7 +38,7 @@ class TermsRichText extends StatelessWidget {
                 ),
                 recognizer: TapGestureRecognizer()
                   ..onTap= (){
-                    Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ShowWebView(link: 'https://glowbal.co.uk/privacy.html')));
+                    Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ShowWebView(link: 'https://www.edugarciamovimiento.com/politica-de-privacidad')));
                   }
             ),
 
@@ -54,7 +54,7 @@ class TermsRichText extends StatelessWidget {
                 ),
                 recognizer: TapGestureRecognizer()
                   ..onTap= (){
-                    Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ShowWebView(link: 'https://www.glowbal.co.uk/eula.html')));
+                    Navigator.push(context, MaterialPageRoute(builder: (builder)=>const ShowWebView(link: 'https://www.edugarciamovimiento.com/aviso-legal-y-condiciones-generales-de-uso')));
                   }
             ),
           ]

@@ -1,4 +1,3 @@
-
 import 'package:edu_gym/core/theme/app_color.dart';
 import 'package:edu_gym/features/auth/presentation/widgets/auth_btn.dart';
 import 'package:flutter/material.dart';
@@ -8,7 +7,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../core/common/constant/image_constant.dart';
 import '../../../../main.dart';
 import '../cubit/auth_cubit.dart';
-import '../cubit/login_cubit.dart';
 import '../widgets/auth_textfields.dart';
 import '../widgets/bottom_rich_text.dart';
 import '../widgets/terms_richText.dart';
@@ -35,7 +33,6 @@ class _RegisterState extends State<Register> {
 
     return MultiBlocProvider(
       providers: [
-        BlocProvider(create: (create) => PasswordCubit()),
         BlocProvider(create: (create) => AuthCubit()),
       ],
       child: Scaffold(
@@ -67,12 +64,14 @@ class _RegisterState extends State<Register> {
                         ),
                         SizedBox(height: 12.h),
                         BottomRichText(
-                          text1: localizations?.alreadyHaveAccount ?? "Already have an account?",
+                          text1: localizations?.alreadyHaveAccount ??
+                              "Already have an account?",
                           text2: localizations?.logIn ?? "Log in",
                           onTap: () {
                             Navigator.pushReplacement(
                               context,
-                              MaterialPageRoute(builder: (builder) => const Login()),
+                              MaterialPageRoute(
+                                  builder: (builder) => const Login()),
                             );
                           },
                         ),
@@ -81,14 +80,16 @@ class _RegisterState extends State<Register> {
                         // Error message container
                         BlocBuilder<AuthCubit, AuthState>(
                           builder: (context, state) {
-                            if (state is AuthFailed && state.errorMsg.isNotEmpty) {
+                            if (state is AuthFailed &&
+                                state.errorMsg.isNotEmpty) {
                               return Container(
                                 width: double.infinity,
                                 padding: EdgeInsets.all(12.r),
                                 margin: EdgeInsets.only(bottom: 20.h),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.1),
-                                  border: Border.all(color: Colors.red, width: 1.5),
+                                  border:
+                                      Border.all(color: Colors.red, width: 1.5),
                                   borderRadius: BorderRadius.circular(12.r),
                                 ),
                                 child: Text(
@@ -113,42 +114,21 @@ class _RegisterState extends State<Register> {
                           prefixIcon: SvgConstant.email,
                         ),
                         SizedBox(height: 20.h),
-                        BlocBuilder<PasswordCubit, PasswordState>(
-                          builder: (context, state) {
-                            return AuthTextFields(
-                              text: localizations?.password ?? 'Password',
-                              textEditingController: _passController,
-                              isObscureText: state is PasswordInvisible,
-                              icon: Icon(
-                                state is PasswordInvisible
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: AppColor.text,
-                              ),
-                              onTap: () => context.read<PasswordCubit>().toggle(),
-                              keyboardType: TextInputType.text,
-                              prefixIcon: SvgConstant.lock,
-                            );
-                          },
+                        AuthTextFields(
+                          text: localizations?.password ?? 'Password',
+                          textEditingController: _passController,
+                          isPassword: true,
+                          keyboardType: TextInputType.text,
+                          prefixIcon: SvgConstant.lock,
                         ),
                         SizedBox(height: 20.h),
-                        BlocBuilder<PasswordCubit, PasswordState>(
-                          builder: (context, state) {
-                            return AuthTextFields(
-                              text: localizations?.confirmPassword ?? 'Confirm Password',
-                              textEditingController: _confirmPassController,
-                              isObscureText: state is PasswordInvisible,
-                              icon: Icon(
-                                state is PasswordInvisible
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: AppColor.text,
-                              ),
-                              onTap: () => context.read<PasswordCubit>().toggle(),
-                              keyboardType: TextInputType.text,
-                              prefixIcon: SvgConstant.lock,
-                            );
-                          },
+                        AuthTextFields(
+                          text: localizations?.confirmPassword ??
+                              'Confirm Password',
+                          textEditingController: _confirmPassController,
+                          isPassword: true,
+                          keyboardType: TextInputType.text,
+                          prefixIcon: SvgConstant.lock,
                         ),
                         SizedBox(height: 20.h),
                       ],
@@ -183,7 +163,8 @@ class _RegisterState extends State<Register> {
                     },
                     builder: (context, state) {
                       if (state is AuthLoading) {
-                        return const CircularProgressIndicator(color: AppColor.primary);
+                        return const CircularProgressIndicator(
+                            color: AppColor.primary);
                       }
                       return Column(
                         mainAxisSize: MainAxisSize.min,
@@ -200,13 +181,14 @@ class _RegisterState extends State<Register> {
                                 FocusManager.instance.primaryFocus?.unfocus();
                                 final email = _emailController.text;
                                 final password = _passController.text;
-                                final confirmPassword = _confirmPassController.text;
+                                final confirmPassword =
+                                    _confirmPassController.text;
 
                                 context.read<AuthCubit>().register(
-                                  email,
-                                  password,
-                                  confirmPassword,
-                                );
+                                      email,
+                                      password,
+                                      confirmPassword,
+                                    );
                               },
                             ),
                           ),

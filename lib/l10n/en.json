@@ -230,5 +230,20 @@
   "months": "Months",
   "year": "Year",
   "years": "Years",
-  "refresh_page_to_view_status": "Please refresh the page in order to view subscription status"
+  "refresh_page_to_view_status": "Please refresh the page in order to view subscription status",
+  "choose_your_plan": "Choose Your Plan",
+  "choose_plan_subtitle": "Subscribe to unlock this and all premium content",
+  "get_this_plan": "Get This Plan",
+  "devices_included": "{count} devices included",
+  "per_month": "/month",
+  "per_year": "/year",
+  "access_steps_sent": "Access steps sent to your email successfully.",
+  "failed_to_load_plans": "Failed to load plans",
+  "no_plans_available": "No plans available right now",
+  "you_selected_plan": "You selected: {plan}",
+  "cast_to_device": "Cast to device",
+  "connected": "Connected",
+  "disconnect": "Disconnect",
+  "searching_for_devices": "Searching for devices...",
+  "percent_watched": "{percent}% watched"
 }

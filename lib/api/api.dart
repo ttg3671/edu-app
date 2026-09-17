@@ -9,6 +9,7 @@ import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/core/error/failure.dart';
 import 'package:edu_gym/modal/module.dart';
 import 'package:edu_gym/modal/module_detail_model.dart';
+import 'package:edu_gym/modal/payment_plan.dart';
 import 'package:edu_gym/modal/search_modal.dart';
 import 'package:edu_gym/modal/user_details.dart';
 import 'package:fpdart/fpdart.dart';
@@ -64,55 +65,24 @@ class Api{
   Future<void> logout() async {
     try {
       final deviceId = await _getOrCreateDeviceId();
-      final rawCookie = await TokenApi.getCookie();
-      final accessToken = await TokenApi().getAccessToken();
-      final cookieHeader = TokenApi.formatCookieHeader(rawCookie);
-
-      // print('🚪 ==================== LOGOUT ====================');
-      // print('📱 [Logout] Device ID: $deviceId');
-      // print('🍪 [Logout] Raw Stored Cookie: $rawCookie');
-      // print('🍪 [Logout] Formatted Cookie header being sent: "$cookieHeader"');
-      // print('🔑 [Logout] Access Token present: ${accessToken != null && accessToken.isNotEmpty}');
-
-      final cleanCookieValue = (rawCookie != null && rawCookie.isNotEmpty)
-          ? (rawCookie.contains('XXAFIT=')
-              ? rawCookie.split('XXAFIT=').last.split(';').first
-              : rawCookie)
-          : null;
-
       final data = {
         'device_id': deviceId,
-        if (cleanCookieValue != null && cleanCookieValue.isNotEmpty) ...{
-          'cookie': cleanCookieValue,
-          'XXAFIT': cleanCookieValue,
-          'refreshToken': cleanCookieValue,
-        },
       };
 
-      var headers = {
-        'Content-Type': 'application/json',
-        if (cookieHeader.isNotEmpty) 'Cookie': cookieHeader,
-        if (cleanCookieValue != null && cleanCookieValue.isNotEmpty) 'x-cookie': cleanCookieValue,
-        if (accessToken != null && accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
-        'x-device-type': DeviceUtil.getDeviceType(),
-      };
-
-      // print('📤 [Logout] Headers: $headers');
-      // print('📤 [Logout] Body: $data');
-
+      // The Cookie (XXAFIT) and Authorization headers are attached by
+      // AuthInterceptor.onRequest for the '/logout' path - it re-reads the
+      // token/cookie right before the request goes out (after refreshing the
+      // access token if needed), so the freshest cookie value is always the
+      // one sent, even if the backend rotates it on refresh.
       var response = await _dio.request(
         '$baseUrl/logout',
         options: Options(
           method: 'POST',
-          headers: headers,
+          headers: {'Content-Type': 'application/json'},
           validateStatus: (_) => true, // Accept all status codes, handle errors gracefully
         ),
         data: data,
       );
-
-      // print('📥 [Logout] Response Status: ${response.statusCode}');
-      // print('📥 [Logout] Response Data: ${response.data}');
-      // print('🚪 ================================================');
 
       // Check if logout was successful (optional - we proceed with local cleanup regardless)
       if (response.statusCode == 204 || response.statusCode == 200) {
@@ -1243,12 +1213,13 @@ class Api{
     }
   }
 
-  Future<Either<Failure, String>> generateWebLink() async {
+  Future<Either<Failure, String>> generateWebLink({String? plan}) async {
     try {
       final deviceId = await DeviceUtil.getDeviceId();
+      final planSegment = (plan != null && plan.isNotEmpty) ? '/plans/${Uri.encodeComponent(plan)}' : '';
 
       final response = await _hitApi(
-        route: '/weblink/send-access-steps/$deviceId',
+        route: '/weblink/send-access-steps/$deviceId$planSegment',
         method: 'GET',
       );
 
@@ -1521,6 +1492,37 @@ class Api{
     }
     on ServerException catch(e){
       return left(Failure(e.msg));
+    }
+  }
+
+  /// Get available subscription plans from /payments/plans
+  Future<Either<Failure, List<PaymentPlan>>> getPaymentPlans() async {
+    try {
+      final response = await _hitApi(
+        route: '/payments/plans',
+        method: 'GET',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final List<dynamic> plansJson = response.data['data']?['plans'] ?? [];
+        final plans = plansJson
+            .whereType<Map>()
+            .map((p) => PaymentPlan.fromJson(Map<String, dynamic>.from(p)))
+            .toList();
+        return right(plans);
+      } else {
+        throw ServerException(
+          msg: response.data?['message'] ?? 'Failed to load plans',
+          statusCode: response.statusCode,
+          response: response.data,
+        );
+      }
+    } on DioException catch (e) {
+      return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to load plans'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
     }
   }
 

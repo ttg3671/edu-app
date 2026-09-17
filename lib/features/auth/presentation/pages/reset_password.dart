@@ -22,9 +22,8 @@ class ResetPassword extends StatefulWidget {
 
 class _ResetPasswordState extends State<ResetPassword> {
   final TextEditingController _newPasswordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
-  bool _obscureNewPassword = true;
-  bool _obscureConfirmPassword = true;
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -138,18 +137,7 @@ class _ResetPasswordState extends State<ResetPassword> {
                       AuthTextFields(
                         text: localizations?.newPassword ?? 'New Password',
                         textEditingController: _newPasswordController,
-                        isObscureText: _obscureNewPassword,
-                        icon: Icon(
-                          _obscureNewPassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          size: 22.sp,
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _obscureNewPassword = !_obscureNewPassword;
-                          });
-                        },
+                        isPassword: true,
                         keyboardType: TextInputType.text,
                         prefixIcon: SvgConstant.lock,
                       ),
@@ -157,20 +145,10 @@ class _ResetPasswordState extends State<ResetPassword> {
 
                       // Confirm Password Input
                       AuthTextFields(
-                        text: localizations?.confirmPassword ?? 'Confirm Password',
+                        text: localizations?.confirmPassword ??
+                            'Confirm Password',
                         textEditingController: _confirmPasswordController,
-                        isObscureText: _obscureConfirmPassword,
-                        icon: Icon(
-                          _obscureConfirmPassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          size: 22.sp,
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _obscureConfirmPassword = !_obscureConfirmPassword;
-                          });
-                        },
+                        isPassword: true,
                         keyboardType: TextInputType.text,
                         prefixIcon: SvgConstant.lock,
                       ),
@@ -186,7 +164,8 @@ class _ResetPasswordState extends State<ResetPassword> {
                         onTap: () {
                           FocusManager.instance.primaryFocus?.unfocus();
 
-                          final newPassword = _newPasswordController.text.trim();
+                          final newPassword =
+                              _newPasswordController.text.trim();
                           final confirmPassword =
                               _confirmPasswordController.text.trim();
 
@@ -227,9 +206,9 @@ class _ResetPasswordState extends State<ResetPassword> {
                           }
 
                           context.read<ResetPasswordCubit>().resetPassword(
-                            newPassword: newPassword,
-                            confirmPassword: confirmPassword,
-                          );
+                                newPassword: newPassword,
+                                confirmPassword: confirmPassword,
+                              );
                         },
                       ),
                       SizedBox(height: 25.h),

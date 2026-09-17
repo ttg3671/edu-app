@@ -2,6 +2,7 @@ import 'package:edu_gym/api/token_api.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../api/api.dart';
 import '../../../../core/theme/app_color.dart';
 import '../../../../core/cubit_states/data_state.dart';
@@ -10,6 +11,7 @@ import '../../../../modal/subscription_details.dart';
 import '../../../../l10n/app_localizations.dart';
 import 'package:edu_gym/features/home/presentation/cubit/new_home_cubit.dart';
 import 'payment_canceled_screen.dart';
+import 'plans_screen.dart';
 import '../cubit/account_cubit.dart';
 
 class SubscriptionScreen extends StatefulWidget {
@@ -24,20 +26,43 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _isSendingEmail = false;
   bool _isCancelling = false;
   bool _isRefreshing = false;
+  String? _selectedPlanName;
 
   @override
   void initState() {
     super.initState();
     _refreshSubscription();
+    _loadSelectedPlanName();
+  }
+
+  Future<void> _loadSelectedPlanName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final name = prefs.getString(PlansScreen.selectedPlanNameKey);
+    if (mounted && name != null && name.isNotEmpty) {
+      setState(() {
+        _selectedPlanName = name;
+      });
+    }
   }
 
   Future<void> _sendAccessStepsEmail() async {
+    // No plan chosen yet (e.g. this screen was reached without going through
+    // PlansScreen first) - send the user to pick one instead of hitting an
+    // endpoint that requires a plan.
+    if (_selectedPlanName == null || _selectedPlanName!.isEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PlansScreen()),
+      );
+      return;
+    }
+
     setState(() {
       _isSendingEmail = true;
     });
 
     final localizations = AppLocalizations.of(context);
-    final result = await Api.instance.generateWebLink();
+    final result = await Api.instance.generateWebLink(plan: _selectedPlanName);
 
     if (mounted) {
       setState(() {
@@ -618,6 +643,27 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         ),
                         textAlign: TextAlign.center,
                       ),
+                      if (_selectedPlanName != null) ...[
+                        SizedBox(height: 16.h),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                          decoration: BoxDecoration(
+                            color: AppColor.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8.r),
+                            border: Border.all(color: AppColor.primary.withValues(alpha: 0.5)),
+                          ),
+                          child: Text(
+                            localizations?.translate('you_selected_plan', params: {'plan': _selectedPlanName!.toUpperCase()}) ??
+                                'You selected: ${_selectedPlanName!.toUpperCase()}',
+                            style: TextStyle(
+                              fontSize: 14.sp,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
                       SizedBox(height: 24.h),
                       ElevatedButton(
                         onPressed: _isSendingEmail ? null : _sendAccessStepsEmail,

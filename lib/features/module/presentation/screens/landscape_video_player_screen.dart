@@ -83,6 +83,7 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
           link: videoUrl,
           videoQualities: qualities, // Pass video qualities
           thumbnailUrl: thumbnailUrl, // Pass thumbnail for loading state
+          videoTitle: lessonTitle,
           alwaysLandscape: true,
           videoProviderId: videoProviderId,
           totalDuration: totalDuration,

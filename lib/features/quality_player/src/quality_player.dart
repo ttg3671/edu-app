@@ -12,7 +12,8 @@ import 'package:video_player/video_player.dart';
 import '../../../responsive.dart';
 import '../cubit/player_cubit.dart';
 import '../cubit/player_state.dart';
-import '../utils/utils.dart';
+import 'cast_button.dart';
+import 'video_seek_bar.dart';
 import 'landscape_video.dart';
 import '../../../l10n/app_localizations.dart';
 
@@ -29,6 +30,7 @@ class QualityPlayer extends StatefulWidget {
   final dynamic videoProviderId; // Track continue watching progress
   final int? totalDuration; // Total duration in seconds from video API
   final Duration? initialPosition; // Start playback at position
+  final String? videoTitle; // Shown as the media title when cast to a TV
 
   const QualityPlayer({
     super.key,
@@ -43,6 +45,7 @@ class QualityPlayer extends StatefulWidget {
     this.videoProviderId,
     this.totalDuration,
     this.initialPosition,
+    this.videoTitle,
   });
 
   @override
@@ -55,7 +58,9 @@ class _QualityPlayerState extends State<QualityPlayer> {
   @override
   void initState() {
     super.initState();
-    _sessionSubscription = GoogleCastSessionManager.instance.currentSessionStream.listen((session) {
+    _sessionSubscription = GoogleCastSessionManager
+        .instance.currentSessionStream
+        .listen((session) {
       if (session != null) {
         _loadMedia();
       }
@@ -63,12 +68,13 @@ class _QualityPlayerState extends State<QualityPlayer> {
   }
 
   void _loadMedia() {
+    final isHls = widget.link.toLowerCase().contains('.m3u8');
     final mediaInfo = GoogleCastMediaInformation(
       contentId: widget.link,
       streamType: CastMediaStreamType.buffered,
-      contentType: 'video/mp4',
+      contentType: isHls ? 'application/x-mpegurl' : 'video/mp4',
       metadata: GoogleCastMovieMediaMetadata(
-        title: 'Edu Gym Video',
+        title: widget.videoTitle ?? 'Edu Gym Video',
         images: widget.thumbnailUrl != null
             ? [GoogleCastImage(url: Uri.parse(widget.thumbnailUrl!))]
             : [],
@@ -92,30 +98,35 @@ class _QualityPlayerState extends State<QualityPlayer> {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider(create: (create) => PlayerCubit(
-          videoProviderId: widget.videoProviderId,
-          totalDuration: widget.totalDuration,
-        )..initVideoPlayer(
-          link: widget.link,
-          videoQualities: widget.videoQualities,
-          isTrailer: widget.isTrailer,
-          seekPosition: widget.initialPosition,
-        )),
-        BlocProvider(create: (create) => VideoOrientationCubit()..changeOrientation(toLandscape: widget.alwaysLandscape)),
+        BlocProvider(
+            create: (create) => PlayerCubit(
+                  videoProviderId: widget.videoProviderId,
+                  totalDuration: widget.totalDuration,
+                )..initVideoPlayer(
+                    link: widget.link,
+                    videoQualities: widget.videoQualities,
+                    isTrailer: widget.isTrailer,
+                    seekPosition: widget.initialPosition,
+                  )),
+        BlocProvider(
+            create: (create) => VideoOrientationCubit()
+              ..changeOrientation(toLandscape: widget.alwaysLandscape)),
       ],
       child: BlocBuilder<VideoOrientationCubit, Orientation>(
         builder: (context, orientation) {
           return orientation == Orientation.landscape
               ? LandscapeVideo(
-            key: const ValueKey('landscape'),
-            player: _vPlayer(iconSize: !Responsive.isTablet ? 25 : 35, isLandscape: true),
-            alwaysLandscape: widget.alwaysLandscape,
-          )
+                  key: const ValueKey('landscape'),
+                  player: _vPlayer(
+                      iconSize: !Responsive.isTablet ? 25 : 35,
+                      isLandscape: true),
+                  alwaysLandscape: widget.alwaysLandscape,
+                )
               : PortraitVideo(
-            key: const ValueKey('portrait'),
-            player: _vPlayer(iconSize: !Responsive.isTablet ? 25 : 35),
-            height: widget.height,
-          );
+                  key: const ValueKey('portrait'),
+                  player: _vPlayer(iconSize: !Responsive.isTablet ? 25 : 35),
+                  height: widget.height,
+                );
         },
       ),
     );
@@ -141,17 +152,21 @@ class _QualityPlayerState extends State<QualityPlayer> {
             return SizedBox(
               height: isLandscape
                   ? double.infinity
-                  : widget.height ?? (MediaQuery.sizeOf(context).height * (!Responsive.isTablet ? 0.25 : 0.55)),
+                  : widget.height ??
+                      (MediaQuery.sizeOf(context).height *
+                          (!Responsive.isTablet ? 0.25 : 0.55)),
               child: SafeArea(
                 left: isLandscape,
                 child: Stack(
                   children: [
-                    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty)
+                    if (widget.thumbnailUrl != null &&
+                        widget.thumbnailUrl!.isNotEmpty)
                       Positioned.fill(
                         child: Image.network(
                           widget.thumbnailUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.black),
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(color: Colors.black),
                         ),
                       ),
                     Positioned.fill(
@@ -160,8 +175,12 @@ class _QualityPlayerState extends State<QualityPlayer> {
                       ),
                     ),
                     Positioned.fill(
-                      top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet ? 5 : 10),
-                      left: widget.height == double.infinity ? 20.w : (!Responsive.isTablet ? 5 : 10),
+                      top: widget.height == double.infinity
+                          ? 40.h
+                          : (!Responsive.isTablet ? 5 : 10),
+                      left: widget.height == double.infinity
+                          ? 20.w
+                          : (!Responsive.isTablet ? 5 : 10),
                       child: Align(
                         alignment: Alignment.topLeft,
                         child: InkWell(
@@ -205,22 +224,27 @@ class _QualityPlayerState extends State<QualityPlayer> {
                     children: [
                       Text(
                         localizations?.playbackError ?? "Playback error",
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
                       ),
                       const SizedBox(height: 5),
                       InkWell(
                         onTap: () {
-                          context.read<PlayerCubit>().initVideoPlayer(link: state.videoLink);
+                          context
+                              .read<PlayerCubit>()
+                              .initVideoPlayer(link: state.videoLink);
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 5, horizontal: 10),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             localizations?.retry ?? "Retry",
-                            style: const TextStyle(color: Colors.black, fontSize: 10),
+                            style: const TextStyle(
+                                color: Colors.black, fontSize: 10),
                           ),
                         ),
                       ),
@@ -261,7 +285,8 @@ class _QualityPlayerState extends State<QualityPlayer> {
               "Authentication Required",
               "Please login to watch this video.",
               onRetry: () {
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const Login()));
+                Navigator.pushReplacement(
+                    context, MaterialPageRoute(builder: (c) => const Login()));
               },
               buttonText: "Login Now",
             );
@@ -270,10 +295,14 @@ class _QualityPlayerState extends State<QualityPlayer> {
         },
       );
 
-  Widget _errorOverlay(BuildContext context, double iconSize, String title, String message, {required VoidCallback onRetry, required String buttonText}) {
+  Widget _errorOverlay(
+      BuildContext context, double iconSize, String title, String message,
+      {required VoidCallback onRetry, required String buttonText}) {
     return Container(
       color: Colors.black,
-      height: widget.height ?? (MediaQuery.sizeOf(context).height * (!Responsive.isTablet ? 0.25 : 0.55)),
+      height: widget.height ??
+          (MediaQuery.sizeOf(context).height *
+              (!Responsive.isTablet ? 0.25 : 0.55)),
       child: Stack(
         children: [
           Center(
@@ -283,11 +312,18 @@ class _QualityPlayerState extends State<QualityPlayer> {
                 children: [
                   Icon(Icons.lock_outline, color: Colors.white, size: 40.sp),
                   SizedBox(height: 10.h),
-                  Text(title, style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold)),
+                  Text(title,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.bold)),
                   SizedBox(height: 5.h),
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 40.w),
-                    child: Text(message, textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 12.sp)),
+                    child: Text(message,
+                        textAlign: TextAlign.center,
+                        style:
+                            TextStyle(color: Colors.white70, fontSize: 12.sp)),
                   ),
                   SizedBox(height: 20.h),
                   ElevatedButton(
@@ -295,7 +331,8 @@ class _QualityPlayerState extends State<QualityPlayer> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
-                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
                     ),
                     child: Text(buttonText),
                   ),
@@ -316,263 +353,269 @@ class _QualityPlayerState extends State<QualityPlayer> {
     );
   }
 
-
-
-  Widget _player({required BuildContext context, required VideoInitialized state,
-    required double iconSize, required double fontSize, bool isLandscape = false}) {
-    return GestureDetector(
-      onScaleStart: (scale) {},
-      child: Stack(
-        children: [
-          isLandscape
-              ? Center(
-            child: AspectRatio(
-              aspectRatio: state.videoPlayerController.value.aspectRatio,
-              child: VideoPlayer(state.videoPlayerController),
-            ),
-          )
-              : SizedBox.expand(
-            child: FittedBox(
-              fit: widget.height == double.infinity ? BoxFit.cover : BoxFit.contain,
-              child: SizedBox(
-                width: state.videoPlayerController.value.size.width,
-                height: state.videoPlayerController.value.size.height,
-                child: VideoPlayer(state.videoPlayerController),
+  Widget _player(
+      {required BuildContext context,
+      required VideoInitialized state,
+      required double iconSize,
+      required double fontSize,
+      bool isLandscape = false}) {
+    // Plain Stack (not wrapped in a GestureDetector with onScaleStart): an
+    // ancestor scale-gesture recognizer competes with the seek bar's own
+    // drag recognizer and was winning the gesture arena, which made the
+    // progress bar impossible to scrub reliably.
+    return Stack(
+      children: [
+        isLandscape
+            ? Center(
+                child: AspectRatio(
+                  aspectRatio: state.videoPlayerController.value.aspectRatio,
+                  child: VideoPlayer(state.videoPlayerController),
+                ),
+              )
+            : SizedBox.expand(
+                child: FittedBox(
+                  fit: widget.height == double.infinity
+                      ? BoxFit.cover
+                      : BoxFit.contain,
+                  child: SizedBox(
+                    width: state.videoPlayerController.value.size.width,
+                    height: state.videoPlayerController.value.size.height,
+                    child: VideoPlayer(state.videoPlayerController),
+                  ),
+                ),
+              ),
+        ValueListenableBuilder(
+          valueListenable: state.videoPlayerController,
+          builder:
+              (BuildContext context, VideoPlayerValue value, Widget? child) {
+            if (value.isBuffering) {
+              return const Center(
+                  child: CircularProgressIndicator(color: Colors.white));
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+        Container(
+            color: state.showControls ? Colors.black45 : Colors.transparent),
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.center,
+            child: AnimatedOpacity(
+              opacity: state.showControls ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  InkWell(
+                    onTap: () => state.showControls
+                        ? context.read<PlayerCubit>().backwardVideo()
+                        : context.read<PlayerCubit>().toggleControls(),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        color: Colors.black26,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.replay_10,
+                        size: iconSize,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => state.showControls
+                        ? context.read<PlayerCubit>().toggleVideoPlay()
+                        : context.read<PlayerCubit>().toggleControls(),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        color: Colors.black26,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        state.videoPlayerController.value.isPlaying
+                            ? Icons.pause
+                            : Icons.play_arrow,
+                        size: iconSize,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => state.showControls
+                        ? context.read<PlayerCubit>().forwardVideo()
+                        : context.read<PlayerCubit>().toggleControls(),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        color: Colors.black26,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.forward_10,
+                        size: iconSize,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-
-          ValueListenableBuilder(
-            valueListenable: state.videoPlayerController,
-            builder: (BuildContext context, VideoPlayerValue value, Widget? child) {
-              if (value.isBuffering) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white));
-              }
-              return const SizedBox.shrink();
-            },
-          ),
-          Container(color: state.showControls ? Colors.black45 : Colors.transparent),
-
-          Positioned.fill(
-            child: Align(
-              alignment: Alignment.center,
-              child: AnimatedOpacity(
-                opacity: state.showControls ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        ),
+        Positioned.fill(
+          bottom: isLandscape ? (!Responsive.isTablet ? 40 : 50) : 0,
+          left: isLandscape ? (!Responsive.isTablet ? 5 : 10) : 0,
+          right: isLandscape ? (!Responsive.isTablet ? 5 : 10) : 0,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: AnimatedOpacity(
+              opacity: state.showControls ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: SafeArea(
+                left: isLandscape,
+                right: false,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    InkWell(
-                      onTap: () => state.showControls
-                          ? context.read<PlayerCubit>().backwardVideo()
-                          : context.read<PlayerCubit>().toggleControls(),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: const BoxDecoration(
-                          color: Colors.black26,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.replay_10,
-                          size: iconSize,
-                          color: Colors.white,
-                        ),
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: !Responsive.isTablet ? 5 : 10,
+                        bottom: !Responsive.isTablet ? 12 : 16,
+                        right: !Responsive.isTablet ? 8 : 12,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          CastButton(iconSize: iconSize),
+                          SizedBox(width: isLandscape ? 20 : 16),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(iconSize),
+                            onTap: () {
+                              if (state.showControls) {
+                                isLandscape
+                                    ? context
+                                        .read<VideoOrientationCubit>()
+                                        .portrait()
+                                    : context
+                                        .read<VideoOrientationCubit>()
+                                        .landscape();
+                              }
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Icon(
+                                isLandscape
+                                    ? Icons.fullscreen_exit
+                                    : Icons.fullscreen,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    InkWell(
-                      onTap: () => state.showControls
-                          ? context.read<PlayerCubit>().toggleVideoPlay()
-                          : context.read<PlayerCubit>().toggleControls(),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: const BoxDecoration(
-                          color: Colors.black26,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          state.videoPlayerController.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                          size: iconSize,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () => state.showControls
-                          ? context.read<PlayerCubit>().forwardVideo()
-                          : context.read<PlayerCubit>().toggleControls(),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: const BoxDecoration(
-                          color: Colors.black26,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.forward_10,
-                          size: iconSize,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                    VideoSeekBar(controller: state.videoPlayerController),
                   ],
                 ),
               ),
             ),
           ),
-
-          Positioned.fill(
-            bottom: isLandscape ? (!Responsive.isTablet ? 40 : 50) : 0,
-            left: isLandscape ? (!Responsive.isTablet ? 5 : 10) : 0,
-            right: isLandscape ? (!Responsive.isTablet ? 5 : 10) : 0,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: ValueListenableBuilder(
-                valueListenable: state.videoPlayerController,
-                builder: (BuildContext context, value, Widget? child) {
-                  final currentPosition = Utils.formatDuration(value.position);
-                  final totalDuration = Utils.formatDuration(value.duration);
-                  return AnimatedOpacity(
-                    opacity: state.showControls ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: SafeArea(
-                      left: isLandscape,
-                      right: false,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              vertical: !Responsive.isTablet ? 5 : 10,
-                              horizontal: isLandscape ? 0 : (!Responsive.isTablet ? 5 : 10),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '$currentPosition : $totalDuration',
-                                  style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                                    color: Colors.white,
-                                    fontSize: fontSize,
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    // Hide connected devices icon as requested
-                                    const SizedBox.shrink(),
-                                    InkWell(
-                                      onTap: () {
-                                        if (state.showControls) {
-                                          isLandscape
-                                              ? context.read<VideoOrientationCubit>().portrait()
-                                              : context.read<VideoOrientationCubit>().landscape();
-                                        }
-                                      },
-                                      child: Icon(
-                                        isLandscape ? Icons.fullscreen_exit : Icons.fullscreen,
-                                        color: Colors.white,
-                                        size: iconSize,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          VideoProgressIndicator(
-                            state.videoPlayerController,
-                            allowScrubbing: true,
-                          ),
-                        ],
+        ),
+        Positioned.fill(
+          top: widget.height == double.infinity
+              ? 40.h
+              : (!Responsive.isTablet ? 5 : 10),
+          right: widget.height == double.infinity
+              ? 20.w
+              : (!Responsive.isTablet ? 15 : 20),
+          child: Align(
+            alignment: Alignment
+                .topRight, // Fixed the malformed alignment argument hierarchy bug here
+            child: AnimatedOpacity(
+              opacity: state.showControls ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: Visibility(
+                visible: state.showControls,
+                child: InkWell(
+                    onTap: () {
+                      _showBottomDialog(
+                        context: context,
+                        controller: state.videoPlayerController,
+                        videoQualities: widget.videoQualities ?? [],
+                        currentQuality: state.currentQuality,
+                        isLandscape: isLandscape,
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.settings,
+                        size: iconSize,
+                        color: Colors.white,
                       ),
-                    ),
-                  );
-                },
+                    )),
               ),
             ),
           ),
-
-          Positioned.fill(
-            top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet ? 5 : 10),
-            right: widget.height == double.infinity ? 20.w : (!Responsive.isTablet ? 15 : 20),
-            child: Align(
-              alignment: Alignment.topRight, // Fixed the malformed alignment argument hierarchy bug here
+        ),
+        Positioned.fill(
+          top: widget.height == double.infinity
+              ? 40.h
+              : (!Responsive.isTablet ? 5 : 10),
+          left: widget.height == double.infinity
+              ? 20.w
+              : (!Responsive.isTablet ? 5 : 10),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SafeArea(
+              left: isLandscape,
               child: AnimatedOpacity(
                 opacity: state.showControls ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 300),
-                child: Visibility(
-                  visible: state.showControls,
-                  child: InkWell(
-                      onTap: () {
-                        _showBottomDialog(
-                          context: context,
-                          controller: state.videoPlayerController,
-                          videoQualities: widget.videoQualities ?? [],
-                          currentQuality: state.currentQuality,
-                          isLandscape: isLandscape,
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Icon(
-                          Icons.settings,
-                          size: iconSize,
-                          color: Colors.white,
-                        ),
-                      )),
-                ),
-              ),
-            ),
-          ),
-
-          Positioned.fill(
-            top: widget.height == double.infinity ? 40.h : (!Responsive.isTablet ? 5 : 10),
-            left: widget.height == double.infinity ? 20.w : (!Responsive.isTablet ? 5 : 10),
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: SafeArea(
-                left: isLandscape,
-                child: AnimatedOpacity(
-                  opacity: state.showControls ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: InkWell(
-                    onTap: () {
-                      context.read<PlayerCubit>().syncProgress();
-                      if (widget.onExitIconTap != null) {
-                        widget.onExitIconTap!();
-                      } else {
-                        if (isLandscape) {
-                          if (state.showControls) {
-                            if (widget.alwaysLandscape) {
-                              onPressBack();
-                            } else {
-                              context.read<VideoOrientationCubit>().portrait();
-                            }
+                child: InkWell(
+                  onTap: () {
+                    context.read<PlayerCubit>().syncProgress();
+                    if (widget.onExitIconTap != null) {
+                      widget.onExitIconTap!();
+                    } else {
+                      if (isLandscape) {
+                        if (state.showControls) {
+                          if (widget.alwaysLandscape) {
+                            onPressBack();
                           } else {
-                            context.read<PlayerCubit>().toggleControls();
+                            context.read<VideoOrientationCubit>().portrait();
                           }
                         } else {
-                          onPressBack();
+                          context.read<PlayerCubit>().toggleControls();
                         }
+                      } else {
+                        onPressBack();
                       }
-                    },
-                    child: Icon(
-                      Icons.close_sharp,
-                      size: iconSize,
-                      color: Colors.white,
-                    ),
+                    }
+                  },
+                  child: Icon(
+                    Icons.close_sharp,
+                    size: iconSize,
+                    color: Colors.white,
                   ),
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  void _showBottomDialog({required BuildContext context,
-    required VideoPlayerController controller, required List<VideoQuality> videoQualities,
-    required int? currentQuality, bool? isLandscape}) {
-
+  void _showBottomDialog(
+      {required BuildContext context,
+      required VideoPlayerController controller,
+      required List<VideoQuality> videoQualities,
+      required int? currentQuality,
+      bool? isLandscape}) {
     int? currentQuality = context.read<PlayerCubit>().currentQuality;
     final localizations = AppLocalizations.of(context);
 
@@ -591,7 +634,8 @@ class _QualityPlayerState extends State<QualityPlayer> {
                   context: context,
                   settingsName: localizations?.quality ?? 'Quality',
                   settingsIcon: Icons.high_quality_outlined,
-                  value: currentQuality == VideoQuality.auto || currentQuality == null
+                  value: currentQuality == VideoQuality.auto ||
+                          currentQuality == null
                       ? localizations?.auto ?? 'Auto'
                       : '${currentQuality}p',
                   onTap: () {
@@ -607,11 +651,15 @@ class _QualityPlayerState extends State<QualityPlayer> {
                 ),
                 _bottomSettingsIcon(
                   context: context,
-                  settingsName: localizations?.playbackSpeed ?? 'Playback speed',
+                  settingsName:
+                      localizations?.playbackSpeed ?? 'Playback speed',
                   settingsIcon: Icons.speed,
                   value: '${controller.value.playbackSpeed}',
                   onTap: () {
-                    _playBackDialog(context: context, controller: controller, isLandscape: isLandscape);
+                    _playBackDialog(
+                        context: context,
+                        controller: controller,
+                        isLandscape: isLandscape);
                   },
                   isLandscape: isLandscape,
                 ),
@@ -623,11 +671,13 @@ class _QualityPlayerState extends State<QualityPlayer> {
     );
   }
 
-  Widget _bottomSettingsIcon({required BuildContext context,
-    required String settingsName, required IconData settingsIcon,
-    required String value, required VoidCallback onTap,
-    bool? isLandscape}) {
-
+  Widget _bottomSettingsIcon(
+      {required BuildContext context,
+      required String settingsName,
+      required IconData settingsIcon,
+      required String value,
+      required VoidCallback onTap,
+      bool? isLandscape}) {
     final double iconSize = !Responsive.isTablet ? 25 : 35;
     final double fontSize = !Responsive.isTablet ? 15 : 20;
     final theme = Theme.of(context);
@@ -640,7 +690,8 @@ class _QualityPlayerState extends State<QualityPlayer> {
           children: [
             Icon(settingsIcon, size: iconSize),
             const SizedBox(width: 20),
-            Text(settingsName,
+            Text(
+              settingsName,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontSize: fontSize,
                 color: theme.colorScheme.onSurface,
@@ -648,7 +699,8 @@ class _QualityPlayerState extends State<QualityPlayer> {
               ),
             ),
             const Spacer(),
-            Text(value,
+            Text(
+              value,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontSize: fontSize,
                 color: theme.colorScheme.onSurface,
@@ -661,10 +713,12 @@ class _QualityPlayerState extends State<QualityPlayer> {
     );
   }
 
-  void _videoQualityDialog({required BuildContext context,
-    required VideoPlayerController controller, required List<VideoQuality> videoQualities,
-    required int currentQuality, bool? isLandscape}) {
-
+  void _videoQualityDialog(
+      {required BuildContext context,
+      required VideoPlayerController controller,
+      required List<VideoQuality> videoQualities,
+      required int currentQuality,
+      bool? isLandscape}) {
     final double fontSize = !Responsive.isTablet ? 15 : 20;
     final double iconSize = fontSize;
     final theme = Theme.of(context);
@@ -683,32 +737,41 @@ class _QualityPlayerState extends State<QualityPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: videoQualities.map((videoQuality) =>
-                    InkWell(
-                      onTap: () {
-                        context.read<PlayerCubit>().changeQuality(videoQuality);
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Row(
-                          children: [
-                            Opacity(
-                              opacity: videoQuality.quality == currentQuality ? 1 : 0,
-                              child: Icon(Icons.check, size: iconSize),
+                children: videoQualities
+                    .map((videoQuality) => InkWell(
+                          onTap: () {
+                            context
+                                .read<PlayerCubit>()
+                                .changeQuality(videoQuality);
+                            Navigator.pop(context);
+                            Navigator.pop(context);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              children: [
+                                Opacity(
+                                  opacity:
+                                      videoQuality.quality == currentQuality
+                                          ? 1
+                                          : 0,
+                                  child: Icon(Icons.check, size: iconSize),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                    videoQuality.quality == 0
+                                        ? localizations?.auto ?? 'Auto'
+                                        : '${videoQuality.quality}p',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontSize: fontSize,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    )),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            Text(videoQuality.quality == 0 ? localizations?.auto ?? 'Auto' : '${videoQuality.quality}p',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontSize: fontSize,
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.onSurface,
-                                )),
-                          ],
-                        ),
-                      ),
-                    )).toList(),
+                          ),
+                        ))
+                    .toList(),
               ),
             ),
           ),
@@ -717,9 +780,10 @@ class _QualityPlayerState extends State<QualityPlayer> {
     );
   }
 
-  void _playBackDialog({required BuildContext context, required VideoPlayerController controller,
-    bool? isLandscape}) {
-
+  void _playBackDialog(
+      {required BuildContext context,
+      required VideoPlayerController controller,
+      bool? isLandscape}) {
     final double fontSize = !Responsive.isTablet ? 15 : 20;
     final double iconSize = fontSize;
     final theme = Theme.of(context);
@@ -737,32 +801,35 @@ class _QualityPlayerState extends State<QualityPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [0.25, 0.5, 1.0, 1.25, 1.5, 2.0].map((e) =>
-                    InkWell(
-                      onTap: () {
-                        context.read<PlayerCubit>().changeSpeed(e);
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Row(
-                          children: [
-                            Opacity(
-                              opacity: e == controller.value.playbackSpeed ? 1 : 0,
-                              child: Icon(Icons.check, size: iconSize),
+                children: [0.25, 0.5, 1.0, 1.25, 1.5, 2.0]
+                    .map((e) => InkWell(
+                          onTap: () {
+                            context.read<PlayerCubit>().changeSpeed(e);
+                            Navigator.pop(context);
+                            Navigator.pop(context);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              children: [
+                                Opacity(
+                                  opacity: e == controller.value.playbackSpeed
+                                      ? 1
+                                      : 0,
+                                  child: Icon(Icons.check, size: iconSize),
+                                ),
+                                const SizedBox(width: 10),
+                                Text('$e',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontSize: fontSize,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.onSurface,
+                                    )),
+                              ],
                             ),
-                            const SizedBox(width: 10),
-                            Text('$e',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontSize: fontSize,
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.onSurface,
-                                )),
-                          ],
-                        ),
-                      ),
-                    )).toList(),
+                          ),
+                        ))
+                    .toList(),
               ),
             ),
           ),

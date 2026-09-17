@@ -71,6 +71,7 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
           link: videoUrl,
           videoQualities: qualities,
           thumbnailUrl: thumbnailUrl,
+          videoTitle: lessonTitle,
           alwaysLandscape: false, // For vertical videos
           height: double.infinity, // Full screen height
           videoProviderId: videoProviderId,

@@ -17,7 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'landscape_video_player_screen.dart';
 import 'vertical_video_player_screen.dart';
-import '../../../account/presentation/screens/subscription_screen.dart';
+import '../../../account/presentation/screens/plans_screen.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../api/token_api.dart';
 import '../../../auth/presentation/pages/login.dart';
@@ -85,12 +85,11 @@ class _ModuleLessonsScreenState extends State<ModuleLessonsScreen> {
     }
 
     if (!hasAccess) {
-      // Redirect to subscription screen
-      final userDetails = await TokenApi.getUserDetails();
-      if (mounted && userDetails != null) {
+      // Module isn't free and the user isn't subscribed - let them pick a plan.
+      if (mounted) {
         Navigator.push(
-          context, 
-          MaterialPageRoute(builder: (context) => SubscriptionScreen(userDetails: userDetails))
+          context,
+          MaterialPageRoute(builder: (context) => const PlansScreen()),
         );
       }
       return;

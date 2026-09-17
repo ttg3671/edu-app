@@ -7,31 +7,39 @@ import 'package:edu_gym/features/quality_player/cubit/player_state.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-class PlayerCubit extends Cubit<PlayerState>{
+class PlayerCubit extends Cubit<PlayerState> {
   final dynamic videoProviderId;
   final int? totalDuration;
-  PlayerCubit({this.videoProviderId, this.totalDuration}):super(VideoInitial());
+  PlayerCubit({this.videoProviderId, this.totalDuration})
+      : super(VideoInitial());
 
   VideoPlayerController? _controller;
-  bool _showControls=false;
-  bool _isControlChecking=false;
+  bool _showControls = false;
+  bool _isControlChecking = false;
   int? _currentQuality;
   Timer? _progressSyncTimer;
   int _lastKnownPositionSec = 0;
   int _lastKnownDurationSec = 0;
 
-  Future<void> loadVideo({String? link,String? trailerId, required bool? isTrailer,}) async {
+  Future<void> loadVideo({
+    String? link,
+    String? trailerId,
+    required bool? isTrailer,
+  }) async {
     WakelockPlus.enable();
     emit(VideoLoading());
 
     initVideoPlayer(link: link!, isTrailer: isTrailer ?? false);
   }
 
-  Future<void> initVideoPlayer({required String link,int? quality,
-    List<VideoQuality>? videoQualities, Duration? seekPosition, bool isTrailer = false}) async {
-
+  Future<void> initVideoPlayer(
+      {required String link,
+      int? quality,
+      List<VideoQuality>? videoQualities,
+      Duration? seekPosition,
+      bool isTrailer = false}) async {
     // print('🎬 PlayerCubit: initVideoPlayer called');
-    
+
     // 1. Check if user is logged in
     if (!TokenApi.isUserLoggedIn()) {
       emit(AuthRequired());
@@ -58,15 +66,16 @@ class PlayerCubit extends Cubit<PlayerState>{
     _controller = VideoPlayerController.networkUrl(Uri.parse(link))
       ..initialize().then((_) {
         // print('✅ Video initialized successfully');
-        if(!isClosed) {
-          if(seekPosition!=null){
+        if (!isClosed) {
+          if (seekPosition != null) {
             _controller!.seekTo(seekPosition);
             _lastKnownPositionSec = seekPosition.inSeconds;
           }
           _controller!.play();
-          _showControls=false;
-          
-          if (_lastKnownDurationSec <= 0 && _controller!.value.duration.inSeconds > 0) {
+          _showControls = false;
+
+          if (_lastKnownDurationSec <= 0 &&
+              _controller!.value.duration.inSeconds > 0) {
             _lastKnownDurationSec = _controller!.value.duration.inSeconds;
           }
 
@@ -74,31 +83,45 @@ class PlayerCubit extends Cubit<PlayerState>{
           _startProgressSync();
 
           // print('📺 Emitting VideoInitialized state with ${videoQualities?.length ?? 0} qualities');
-          emit(VideoInitialized(videoPlayerController: _controller!,
-              showControls: _showControls,videoQualities: videoQualities,currentQuality: quality));
+          emit(VideoInitialized(
+              videoPlayerController: _controller!,
+              showControls: _showControls,
+              videoQualities: videoQualities,
+              currentQuality: quality));
         }
-      },onError: (error){
+      }, onError: (error) {
         // print('❌ Video initialization error: $error');
-        if(!isClosed){
+        if (!isClosed) {
           emit(VideoError(link));
         }
       });
     _controller!.addListener(() async {
       if (_controller != null && _controller!.value.isInitialized) {
         _lastKnownPositionSec = _controller!.value.position.inSeconds;
-        if (_lastKnownDurationSec <= 0 && _controller!.value.duration.inSeconds > 0) {
-          _lastKnownDurationSec = totalDuration ?? _controller!.value.duration.inSeconds;
+        if (_lastKnownDurationSec <= 0 &&
+            _controller!.value.duration.inSeconds > 0) {
+          _lastKnownDurationSec =
+              totalDuration ?? _controller!.value.duration.inSeconds;
         }
       }
 
-      if(_controller != null && _controller!.value.isPlaying && _showControls && !_isControlChecking){
-        _isControlChecking=true;
+      if (_controller != null &&
+          _controller!.value.isPlaying &&
+          _showControls &&
+          !_isControlChecking) {
+        _isControlChecking = true;
         await Future.delayed(const Duration(seconds: 3));
-        _isControlChecking=false;
-        if(_controller != null && _controller!.value.isPlaying && _showControls && !isClosed){
-          _showControls=!_showControls;
-          emit(VideoInitialized(videoPlayerController: _controller!,
-              showControls: _showControls,videoQualities: videoQualities,currentQuality: quality));
+        _isControlChecking = false;
+        if (_controller != null &&
+            _controller!.value.isPlaying &&
+            _showControls &&
+            !isClosed) {
+          _showControls = !_showControls;
+          emit(VideoInitialized(
+              videoPlayerController: _controller!,
+              showControls: _showControls,
+              videoQualities: videoQualities,
+              currentQuality: quality));
         }
       }
     });
@@ -140,7 +163,8 @@ class PlayerCubit extends Cubit<PlayerState>{
 
     if (durSec <= 0 || posSec < 0) return;
 
-    final parsedProviderId = int.tryParse(videoProviderId.toString()) ?? videoProviderId;
+    final parsedProviderId =
+        int.tryParse(videoProviderId.toString()) ?? videoProviderId;
     // print('⏱️ [CW TABLE - SYNC PROGRESS] video_provider_id: $parsedProviderId, last_position_ms: $posSec, total_duration_ms: $durSec');
 
     Api.instance.updateContinueWatching(
@@ -150,74 +174,92 @@ class PlayerCubit extends Cubit<PlayerState>{
     );
   }
 
-  void toggleControls(){
-    _showControls=!_showControls;
-    emit(VideoInitialized(videoPlayerController: _controller!,
-        showControls: _showControls,currentQuality: _currentQuality));
+  void toggleControls() {
+    _showControls = !_showControls;
+    emit(VideoInitialized(
+        videoPlayerController: _controller!,
+        showControls: _showControls,
+        currentQuality: _currentQuality));
   }
 
-  void toggleVideoPlay(){
-    if(_controller!.value.isPlaying){
+  void toggleVideoPlay() {
+    if (_controller!.value.isPlaying) {
       _controller!.pause();
       disableWakeLock();
       syncProgress();
-    }
-    else{
+    } else {
       _controller!.play();
       enableWakeLock();
     }
 
-    emit(VideoInitialized(videoPlayerController: _controller!,
-        showControls: _showControls,currentQuality: _currentQuality));
+    emit(VideoInitialized(
+        videoPlayerController: _controller!,
+        showControls: _showControls,
+        currentQuality: _currentQuality));
   }
 
-  void forwardVideo(){
+  void forwardVideo() {
     final currentPosition = _controller!.value.position;
     final newPosition = currentPosition + const Duration(seconds: 10);
     _controller!.seekTo(newPosition);
     syncProgress();
   }
 
-  void disposePlayer(){
+  void disposePlayer() {
     _progressSyncTimer?.cancel();
     syncProgress();
-    if(_controller!=null) {
+    if (_controller != null) {
       _controller!.dispose();
       _controller = null;
     }
   }
 
-  void backwardVideo(){
+  void backwardVideo() {
     final currentPosition = _controller!.value.position;
     final newPosition = currentPosition - const Duration(seconds: 10);
     _controller!.seekTo(newPosition);
     syncProgress();
   }
 
-  void changeSpeed(double speed){
-    if(speed==_controller!.value.playbackSpeed) return;
+  void seekTo(Duration position) {
+    if (_controller == null) return;
+    final duration = _controller!.value.duration;
+    var target = position;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    _controller!.seekTo(target);
+    syncProgress();
+  }
+
+  void changeSpeed(double speed) {
+    if (speed == _controller!.value.playbackSpeed) return;
     _controller!.setPlaybackSpeed(speed);
-    emit(VideoInitialized(videoPlayerController: _controller!,
-        showControls: _showControls,currentQuality: _currentQuality));
+    emit(VideoInitialized(
+        videoPlayerController: _controller!,
+        showControls: _showControls,
+        currentQuality: _currentQuality));
   }
 
   Future<void> changeQuality(VideoQuality videoQuality) async {
-    if(videoQuality.quality==_currentQuality) return;
-    _currentQuality=videoQuality.quality;
+    if (videoQuality.quality == _currentQuality) return;
+    _currentQuality = videoQuality.quality;
     final currentPosition = _controller!.value.position;
-    initVideoPlayer(link: videoQuality.link,quality: videoQuality.quality,seekPosition: currentPosition);
+    initVideoPlayer(
+        link: videoQuality.link,
+        quality: videoQuality.quality,
+        seekPosition: currentPosition);
   }
 
-  get currentQuality=>_currentQuality;
+  get currentQuality => _currentQuality;
 
   Future<void> enableWakeLock() async {
-    if(!await WakelockPlus.enabled){
+    if (!await WakelockPlus.enabled) {
       await WakelockPlus.enable();
     }
   }
 
   Future<void> disableWakeLock() async {
-    if(await WakelockPlus.enabled){
+    if (await WakelockPlus.enabled) {
       await WakelockPlus.disable();
     }
   }
@@ -230,40 +272,37 @@ class PlayerCubit extends Cubit<PlayerState>{
     disposePlayer();
     return super.close();
   }
-
 }
 
-class VideoOrientationCubit extends Cubit<Orientation>{
-  VideoOrientationCubit():super(Orientation.portrait);
+class VideoOrientationCubit extends Cubit<Orientation> {
+  VideoOrientationCubit() : super(Orientation.portrait);
 
-  void landscape(){
-    if(!isClosed) {
+  void landscape() {
+    if (!isClosed) {
       emit(Orientation.landscape);
     }
   }
 
-  void portrait(){
-    if(!isClosed) {
+  void portrait() {
+    if (!isClosed) {
       emit(Orientation.portrait);
     }
   }
 
-  void changeOrientation({bool toLandscape= false}){
-    if(toLandscape){
+  void changeOrientation({bool toLandscape = false}) {
+    if (toLandscape) {
       emit(Orientation.landscape);
     }
   }
 }
 
-
 class VideoQuality {
   final int quality;
   final String link;
-  static const int auto=0;
+  static const int auto = 0;
 
   VideoQuality({
     required this.quality,
     required this.link,
   });
 }
-
