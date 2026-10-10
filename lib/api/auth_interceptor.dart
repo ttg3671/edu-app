@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:edu_gym/api/token_api.dart';
+import 'package:edu_gym/core/error/friendly_error.dart';
 import 'package:edu_gym/core/utils/device_util.dart';
 import 'package:edu_gym/features/auth/presentation/pages/verify_email.dart';
 import 'package:edu_gym/main.dart';
@@ -135,11 +136,11 @@ class AuthInterceptor extends Interceptor {
     if (err.response?.statusCode == 401 && !_isRefreshing) {
       // Don't try to refresh if the error was on the refresh endpoint, other auth endpoints, or logout
       final path = err.requestOptions.path;
-      if (path.contains('/refresh') || 
-          path.contains('/auth/sign-in') || 
+      if (path.contains('/refresh') ||
+          path.contains('/auth/sign-in') ||
           path.contains('/auth/sign-up') ||
           path.contains('/logout')) {
-        return handler.next(err);
+        return handler.next(_friendly(err));
       }
 
       _isRefreshing = true;
@@ -168,6 +169,27 @@ class AuthInterceptor extends Interceptor {
         _isRefreshing = false;
       }
     }
-    return handler.next(err);
+    return handler.next(_friendly(err));
+  }
+
+  // Callers show `response.data['message'] ?? e.message`. For server errors
+  // (5xx), dropped connections and non-JSON error pages that would be Dio's
+  // own technical text (or a crash on a non-map body), so hand them the
+  // friendly network-error message in the shape they expect instead.
+  static DioException _friendly(DioException err) {
+    final response = err.response;
+    final status = response?.statusCode;
+    final isServerError = status != null && status >= 500;
+    if (response == null) {
+      return err.copyWith(message: FriendlyError.networkError);
+    }
+    if (isServerError || response.data is! Map) {
+      response.data = <String, dynamic>{
+        'isSuccess': false,
+        'message': FriendlyError.networkError,
+      };
+      return err.copyWith(message: FriendlyError.networkError);
+    }
+    return err;
   }
 }

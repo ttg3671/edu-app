@@ -33,21 +33,11 @@ class _LandscapeVideoState extends State<LandscapeVideo> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: widget.alwaysLandscape,
+      // Back from full screen returns to the upright player, same as the X.
+      canPop: false,
       onPopInvokedWithResult: (didPop, result){
-        if(widget.alwaysLandscape){
-          if(didPop) {
-            // Reset orientation to portrait after successful pop
-            SystemChrome.setPreferredOrientations([
-              DeviceOrientation.portraitUp,
-            ]);
-            SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-          }
-        }
-        else {
-          if(!didPop) {
-            context.read<VideoOrientationCubit>().portrait();
-          }
+        if(!didPop) {
+          context.read<VideoOrientationCubit>().portrait();
         }
       },
       child: Scaffold(

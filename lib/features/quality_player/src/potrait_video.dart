@@ -25,7 +25,10 @@ class _PortraitVideoState extends State<PortraitVideo> {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // A full-screen player hides the status/navigation bars, like landscape.
+    SystemChrome.setEnabledSystemUIMode(widget.height == double.infinity
+        ? SystemUiMode.immersiveSticky
+        : SystemUiMode.edgeToEdge);
   }
 
   @override

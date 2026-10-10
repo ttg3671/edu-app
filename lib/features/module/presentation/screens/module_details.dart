@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:edu_gym/api/token_api.dart';
+import 'package:edu_gym/features/module/presentation/free_module_video.dart';
 import 'package:edu_gym/core/common/widgets/custom_shimmer.dart';
 import 'package:edu_gym/core/common/widgets/loader.dart';
 import 'package:edu_gym/core/cubit_states/data_state.dart';
@@ -43,6 +44,17 @@ class _ModuleDetailsState extends State<ModuleDetails> {
         }
       });
     }
+  }
+
+  /// Freemium modules: open the free video directly, without login.
+  void _playFreemiumVideo(int moduleId, String title, String moduleThumbnail) {
+    openFreeModuleVideo(
+      context,
+      moduleId: moduleId,
+      title: title,
+      fallbackThumbnail: moduleThumbnail,
+      allowGuest: true,
+    );
   }
 
   @override
@@ -223,7 +235,13 @@ class _ModuleDetailsState extends State<ModuleDetails> {
                         bgColor: AppColor.primary,
                         textColor: AppColor.background,
                         onTap: () {
-                          if (!TokenApi.isUserLoggedIn()) {
+                          if (module.isFreemium) {
+                            _playFreemiumVideo(
+                              module.id > 0 ? module.id : widget.moduleId,
+                              displayTitle,
+                              module.fullThumbnailUrl,
+                            );
+                          } else if (!TokenApi.isUserLoggedIn()) {
                             Navigator.push(
                               context,
                               MaterialPageRoute(

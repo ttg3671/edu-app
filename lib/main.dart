@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:edu_gym/api/deep_link_service.dart';
 import 'package:edu_gym/api/socket_service.dart';
@@ -28,7 +29,11 @@ import 'features/home/presentation/screen/continue_watching_screen.dart';
 import 'features/search/presentation/cubit/search_cubit.dart';
 import 'features/auth/presentation/pages/starting_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:edu_gym/services/notification_service.dart';
+import 'package:edu_gym/core/error/friendly_error.dart';
+import 'package:edu_gym/features/quality_player/src/cast_bridge.dart';
+import 'package:edu_gym/features/quality_player/src/cast_error_reporter.dart';
 import 'l10n/app_localizations.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -39,6 +44,14 @@ Future<void> main() async {
   // Initialize Firebase & Push Notifications
   try {
     await Firebase.initializeApp();
+
+    // Crashlytics: report Flutter framework errors and uncaught async errors
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
     await NotificationService().init();
   } catch (e) {
     debugPrint('Firebase/Notification initialization error: $e');
@@ -52,19 +65,51 @@ Future<void> main() async {
 
   if (Platform.isAndroid || Platform.isIOS) {
     try {
-      final options = GoogleCastOptionsAndroid(
-        appId: GoogleCastDiscoveryCriteria.kDefaultApplicationId,
-      );
+      const appId = GoogleCastDiscoveryCriteria.kDefaultApplicationId;
+      // The app can only control a session it started itself, so don't
+      // leave the TV playing once the app is closed.
+      final GoogleCastOptions options = Platform.isIOS
+          ? IOSGoogleCastOptions(
+              GoogleCastDiscoveryCriteriaInitialize.initWithApplicationID(
+                  appId),
+              stopCastingOnAppTerminated: true,
+            )
+          : GoogleCastOptionsAndroid(
+              appId: appId,
+              stopCastingOnAppTerminated: true,
+            );
       await GoogleCastContext.instance.setSharedInstanceWithOptions(options);
-    } catch (e) {
-      debugPrint('Error initializing Google Cast: $e');
+    } catch (e, stack) {
+      reportCastError(e, stack, 'initialization failed');
     }
+    await CastBridge.instance.init();
   }
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
   ));
+  // Replaces Flutter's red/grey error box (shown when a widget fails to
+  // build) with a plain message. The error itself is still reported through
+  // FlutterError.onError above.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: Text(
+        FriendlyError.networkError,
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 14,
+          decoration: TextDecoration.none,
+        ),
+      ),
+    );
+  };
+
   runApp(const MyApp());
 }
 

@@ -7,6 +7,9 @@ class ModuleDetailModel {
   final String? thumbnailUrl;
   final int isFree;
   final int videosCount;
+  // 1 = the module's video can be watched without logging in, via
+  // `/users/free-modules/:module_id/video`.
+  final int freemium;
 
   ModuleDetailModel({
     required this.id,
@@ -15,7 +18,10 @@ class ModuleDetailModel {
     this.thumbnailUrl,
     required this.isFree,
     required this.videosCount,
+    this.freemium = 0,
   });
+
+  bool get isFreemium => freemium == 1;
 
   factory ModuleDetailModel.fromJson(Map<String, dynamic> json) {
     final rawThumbnail = json['thumbnail_url'] ?? json['thumbnail'] ?? json['module_image'] ?? '';
@@ -33,6 +39,9 @@ class ModuleDetailModel {
       videosCount: json['videos_count'] is int
           ? json['videos_count']
           : (int.tryParse(json['videos_count']?.toString() ?? json['video_count']?.toString() ?? json['lesson_count']?.toString() ?? '0') ?? 0),
+      freemium: json['freemium'] is int
+          ? json['freemium']
+          : (json['freemium'] == true || json['freemium']?.toString() == '1' ? 1 : 0),
     );
   }
 
@@ -56,6 +65,7 @@ class ModuleDetailModel {
       'thumbnail_url': thumbnailUrl,
       'is_free': isFree,
       'videos_count': videosCount,
+      'freemium': freemium,
     };
   }
 }

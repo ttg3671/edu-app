@@ -70,7 +70,8 @@ class HomeShimmerLoading extends StatelessWidget {
 
                   // Horizontal 16:9 Cards Skeleton
                   SizedBox(
-                    height: 180.h,
+                    // Match the card in NewHomeScreen: 16:9 image + title.
+                    height: 280.w * 9 / 16 + 8.h + 44.sp,
                     child: ListView.builder(
                       itemCount: 3,
                       scrollDirection: Axis.horizontal,
@@ -78,10 +79,21 @@ class HomeShimmerLoading extends StatelessWidget {
                       itemBuilder: (context, index) {
                         return Padding(
                           padding: EdgeInsets.symmetric(horizontal: 5.w),
-                          child: CustomShimmer(
-                            height: 180.h,
-                            width: 280.w, // Match the card width in NewHomeScreen
-                            borderRadius: BorderRadius.circular(15.r),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CustomShimmer(
+                                height: 280.w * 9 / 16,
+                                width: 280.w,
+                                borderRadius: BorderRadius.circular(15.r),
+                              ),
+                              SizedBox(height: 10.h),
+                              CustomShimmer(
+                                height: 14.sp,
+                                width: 180.w,
+                                borderRadius: BorderRadius.circular(4.r),
+                              ),
+                            ],
                           ),
                         );
                       },

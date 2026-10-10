@@ -35,8 +35,15 @@ class _AccountState extends State<Account> {
   String _maskEmail(String email) {
     final trimmed = email.trim();
     if (trimmed.isEmpty) return '';
-    if (trimmed.length <= 2) return '$trimmed***';
-    return '${trimmed[0]}***${trimmed[trimmed.length - 1]}';
+    // annu123@gmail.com -> an*****3@gmail.com
+    final match = RegExp(r'^([^@]{2})[^@]*([^@])(@.+)$').firstMatch(trimmed);
+    if (match != null) {
+      return '${match.group(1)}*****${match.group(2)}${match.group(3)}';
+    }
+    // Local part too short (or no "@"): keep the first char only
+    final at = trimmed.indexOf('@');
+    if (at > 0) return '${trimmed[0]}*****${trimmed.substring(at)}';
+    return '${trimmed[0]}*****';
   }
 
   @override

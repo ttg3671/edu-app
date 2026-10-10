@@ -13,6 +13,7 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
   final int? totalDuration; // Total duration in seconds from video API
   final int? moduleId; // Module ID for back navigation
   final Duration? initialPosition; // Resume position
+  final bool allowGuest; // Freemium: playable without login
 
   const VerticalVideoPlayerScreen({
     super.key,
@@ -24,6 +25,7 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
     this.totalDuration,
     this.moduleId,
     this.initialPosition,
+    this.allowGuest = false,
   });
 
   void _handleExit(BuildContext context) {
@@ -77,6 +79,7 @@ class VerticalVideoPlayerScreen extends StatelessWidget {
           videoProviderId: videoProviderId,
           totalDuration: totalDuration,
           initialPosition: initialPosition,
+          allowGuest: allowGuest,
           onExitIconTap: () => _handleExit(context),
         ),
       ),

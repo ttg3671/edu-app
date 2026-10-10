@@ -4,7 +4,9 @@ import 'package:edu_gym/core/common/widgets/loader.dart';
 import 'package:edu_gym/core/cubit_states/data_state.dart';
 import 'package:edu_gym/core/utils/convert.dart';
 import 'package:edu_gym/core/utils/custom_snackbar.dart';
+import 'package:edu_gym/features/auth/presentation/widgets/auth_btn.dart';
 import 'package:edu_gym/features/module/presentation/cubit/module_cubit.dart';
+import 'package:edu_gym/features/module/presentation/free_module_video.dart';
 import 'package:edu_gym/features/module/presentation/widget/module_description.dart';
 import 'package:edu_gym/features/module/presentation/widget/module_lesson.dart';
 import 'package:edu_gym/features/module/presentation/widget/syllabus_section.dart';
@@ -48,6 +50,58 @@ class _ModuleLessonsScreenState extends State<ModuleLessonsScreen> {
         );
       });
     }
+  }
+
+  static bool _isBlank(String? s) {
+    final t = s?.trim();
+    return t == null || t.isEmpty || t.toLowerCase() == 'null';
+  }
+
+  /// A module with exactly one syllabus holding exactly one lesson, where
+  /// neither has a title, is a single video: the syllabus/lesson list is
+  /// hidden and a "Watch Video" button is shown instead.
+  bool _isSingleUntitledVideo(Module module) {
+    final syllabus = module.syllabus;
+    if (syllabus == null || syllabus.length != 1) return false;
+    final only = syllabus.first;
+    final lessons = only.lessons;
+    if (lessons == null || lessons.length != 1) return false;
+    if (only.lessonsHasMore == true || only.hasMore == true) return false;
+    return _isBlank(only.syllabusTitle) && _isBlank(lessons.first.lessonTitle);
+  }
+
+  bool _userHasAccess(Module module) {
+    final user = TokenApi.user;
+    return user?.isReviewer == 1 ||
+        module.isFree ||
+        module.alreadyOwned ||
+        user?.isSubscribed == 1;
+  }
+
+  void _onWatchSingleVideo(Module module) {
+    if (!_userHasAccess(module)) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PlansScreen()),
+      );
+      return;
+    }
+
+    // Resume where the user left off (value may be seconds or ms).
+    final lesson = module.syllabus!.first.lessons!.first;
+    final last = lesson.lastPositionMs ?? 0;
+    final Duration? resumeAt = last <= 0
+        ? null
+        : (last > 1000 ? Duration(milliseconds: last) : Duration(seconds: last));
+
+    openFreeModuleVideo(
+      context,
+      moduleId: widget.moduleId,
+      title: module.moduleTitle.isNotEmpty ? module.moduleTitle : widget.moduleTitle,
+      fallbackThumbnail: module.moduleImage,
+      initialPosition: resumeAt,
+      trackProgress: true,
+    );
   }
 
   Future<void> _onPlayLesson(Lesson lesson, Module module) async {
@@ -264,8 +318,12 @@ class _ModuleLessonsScreenState extends State<ModuleLessonsScreen> {
           body: BlocBuilder<ModuleCubit,DataState>(
               builder: (BuildContext context, DataState state) {
                 if(state is DataLoaded<Module>){
+                  final bool singleVideo = _isSingleUntitledVideo(state.data);
                   return SafeArea(
-                    child: CustomScrollView(
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: CustomScrollView(
                       slivers: [
                       SliverToBoxAdapter(
                         child: Padding(
@@ -423,8 +481,12 @@ class _ModuleLessonsScreenState extends State<ModuleLessonsScreen> {
                                 const Divider(),
                                 SizedBox(height: 10.h,),
 
+                                // Single untitled video: no course list - the
+                                // Watch Video button is pinned at the bottom.
+                                if (singleVideo)
+                                  const SizedBox.shrink()
                                 // Show syllabus count and total lessons
-                                if (state.data.syllabus != null && state.data.syllabus!.isNotEmpty) ...[
+                                else if (state.data.syllabus != null && state.data.syllabus!.isNotEmpty) ...[
                                   Row(
                                     children: [
                                       Icon(Icons.list_alt,size: 30.sp, color: AppColor.text,),
@@ -483,7 +545,10 @@ class _ModuleLessonsScreenState extends State<ModuleLessonsScreen> {
                         ),
 
                         // Show syllabus sections if available, otherwise show lessons
-                        if (state.data.syllabus != null && state.data.syllabus!.isNotEmpty)
+                        // (hidden for a single untitled video - see button above)
+                        if (singleVideo)
+                          const SliverToBoxAdapter(child: SizedBox.shrink())
+                        else if (state.data.syllabus != null && state.data.syllabus!.isNotEmpty)
                           SliverPadding(
                             padding: EdgeInsets.symmetric(horizontal: 20.w),
                             sliver: SliverList(
@@ -539,6 +604,33 @@ class _ModuleLessonsScreenState extends State<ModuleLessonsScreen> {
                         SliverPadding(
                           padding: EdgeInsets.only(bottom: 20.h),
                         ),
+                      ],
+                    ),
+                        ),
+
+                        // Watch Video button pinned at the bottom, same as
+                        // the Start Video bar on the module details page.
+                        if (singleVideo)
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 15.h),
+                            decoration: BoxDecoration(
+                              color: AppColor.background,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  offset: const Offset(0, -2),
+                                  blurRadius: 6,
+                                ),
+                              ],
+                            ),
+                            child: AuthBtn(
+                              text: localizations?.translate('watch_video') ?? 'Watch Video',
+                              width: double.infinity,
+                              bgColor: AppColor.primary,
+                              textColor: AppColor.background,
+                              onTap: () => _onWatchSingleVideo(state.data),
+                            ),
+                          ),
                       ],
                     ),
                   );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../error/friendly_error.dart';
+
 class CustomSnackBar {
   static void show({
     required BuildContext context,
@@ -11,7 +13,7 @@ class CustomSnackBar {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          message,
+          FriendlyError.clean(message) ?? message,
           style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w500),
         ),
         backgroundColor: color ?? const Color(0xFF2E2E2E),

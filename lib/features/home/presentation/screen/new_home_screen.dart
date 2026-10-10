@@ -1,7 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:edu_gym/api/token_api.dart';
 import 'package:edu_gym/core/theme/app_color.dart';
-import 'package:edu_gym/core/common/widgets/custom_shimmer.dart';
+import 'package:edu_gym/core/common/widgets/app_network_image.dart';
 import 'package:edu_gym/core/cubit_states/data_state.dart';
 import 'package:edu_gym/cubits/navigation_cubit.dart';
 import 'package:edu_gym/features/auth/presentation/pages/starting_screen.dart';
@@ -437,6 +436,7 @@ class HorizontalSectionList extends StatefulWidget {
 
 class _HorizontalSectionListState extends State<HorizontalSectionList> {
   final ScrollController _horizontalController = ScrollController();
+  double get _cardWidth => 280.w;
 
   @override
   void initState() {
@@ -467,7 +467,8 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
   Widget build(BuildContext context) {
     final modules = widget.section.modules;
     return SizedBox(
-      height: 180.h,
+      // 16:9 image + gap + up to two lines of title below it.
+      height: _cardWidth * 9 / 16 + 8.h + 44.sp,
       child: ListView.builder(
         controller: _horizontalController,
         scrollDirection: Axis.horizontal,
@@ -489,6 +490,9 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
   }
 
   Widget _buildModuleCard(BuildContext context, NewHomeModule module) {
+    final user = TokenApi.user;
+    final bool hasFullAccess =
+        user?.isSubscribed == 1 || user?.isReviewer == 1;
     return GestureDetector(
       onTap: () {
         if (TokenApi.isUserLoggedIn()) {
@@ -514,94 +518,120 @@ class _HorizontalSectionListState extends State<HorizontalSectionList> {
         }
       },
       child: Container(
-        width: 280.w,
+        width: _cardWidth,
         margin: EdgeInsets.symmetric(horizontal: 5.w),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(15.r),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Stack(
-              children: [
-                // Image
-                module.fullThumbnailUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: module.fullThumbnailUrl,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        placeholder: (context, url) => const CustomShimmer(),
-                        errorWidget: (context, url, error) => Container(
-                          color: AppColor.secondary,
-                          child: const Icon(Icons.image, color: AppColor.text),
-                        ),
-                      )
-                    : Container(
-                        color: AppColor.secondary,
-                        child: const Icon(Icons.image, color: AppColor.text),
-                      ),
-                
-                // Gradient Overlay
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          AppColor.background.withOpacity(0.7),
-                        ],
-                        stops: const [0.6, 1.0],
-                      ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(15.r),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  children: [
+                    // Image
+                    Positioned.fill(
+                      child: module.fullThumbnailUrl.isNotEmpty
+                          ? AppNetworkImage(
+                              url: module.fullThumbnailUrl,
+                              errorWidget: Container(
+                                color: AppColor.secondary,
+                                child: const Icon(Icons.image,
+                                    color: AppColor.text),
+                              ),
+                            )
+                          : Container(
+                              color: AppColor.secondary,
+                              child: const Icon(Icons.image,
+                                  color: AppColor.text),
+                            ),
                     ),
-                  ),
-                ),
 
-                // Title Overlay (bottom left)
-                Positioned(
-                  bottom: 12.h,
-                  left: 12.w,
-                  right: 40.w,
-                  child: Text(
-                    module.title,
-                    style: TextStyle(
-                      color: AppColor.text,
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.bold,
-                      shadows: [
-                        Shadow(
-                          offset: const Offset(0, 1),
-                          blurRadius: 2,
-                          color: Colors.black.withOpacity(0.5),
+                    // FREE tag (top left) if is_free is 1
+                    if (module.isFree == 1)
+                      Positioned(
+                        top: 10.h,
+                        left: 10.w,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade600,
+                            borderRadius: BorderRadius.circular(6.r),
+                          ),
+                          child: Text(
+                            'FREE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                      ),
 
-                // Lock Icon (top right) if is_free is 0
-                if (module.isFree == 0)
-                  Positioned(
-                    top: 10.h,
-                    right: 10.w,
-                    child: Container(
-                      padding: EdgeInsets.all(4.w),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        shape: BoxShape.circle,
+                    // Tick icon (top right) on free modules
+                    if (module.isFree == 1)
+                      Positioned(
+                        top: 10.h,
+                        right: 10.w,
+                        child: Container(
+                          padding: EdgeInsets.all(4.w),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 16.sp,
+                          ),
+                        ),
                       ),
-                      child: Icon(
-                        Icons.lock,
-                        color: AppColor.primary,
-                        size: 16.sp,
+
+                    // Lock Icon (top right): paid module and the user has
+                    // no access (not subscribed and not a reviewer).
+                    if (module.isFree == 0 && !hasFullAccess)
+                      Positioned(
+                        top: 10.h,
+                        right: 10.w,
+                        child: Container(
+                          padding: EdgeInsets.all(4.w),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.lock,
+                            color: AppColor.primary,
+                            size: 16.sp,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
-          ),
+            SizedBox(height: 8.h),
+            // Title below the image
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4.w),
+              child: Text(
+                module.title,
+                style: TextStyle(
+                  color: AppColor.text,
+                  fontSize: 15.sp,
+                  fontWeight: FontWeight.bold,
+                  height: 1.3,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );

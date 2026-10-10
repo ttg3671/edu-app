@@ -1119,6 +1119,49 @@ class Api{
     }
   }
 
+  /// Video for a freemium module (playable without login).
+  /// Returns the response's `data`: `{ id, files: [{quality, link}], duration,
+  /// ui_style, thumbnail }`.
+  Future<Either<Failure, Map<String, dynamic>>> getFreeModuleVideo({
+    required int moduleId,
+  }) async {
+    try {
+      final accessToken = await TokenApi().getAccessToken();
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+
+      final response = await _dio.request(
+        '$baseUrl/users/free-modules/$moduleId/video',
+        options: Options(
+          method: 'GET',
+          headers: headers,
+        ),
+      );
+
+      final body = response.data;
+      if (response.statusCode == 200 &&
+          body is Map &&
+          body['isSuccess'] == true &&
+          body['data'] is Map) {
+        return right(Map<String, dynamic>.from(body['data']));
+      }
+      final message = body is Map ? body['message']?.toString() : null;
+      return left(Failure(message ?? 'Video currently unavailable'));
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map ? data['message']?.toString() : null;
+      return left(Failure(message ?? e.message ?? 'Video currently unavailable'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
   Future<Either<Failure, Map<String, dynamic>>> getModuleLessons({
     required int moduleId,
     int limit = 4,
@@ -1848,6 +1891,55 @@ class Api{
     } on DioException catch (e) {
       // print('❌ [CW TABLE - POST DIO ERROR]: ${e.response?.data ?? e.message}');
       return left(Failure(e.response?.data?['message'] ?? e.message ?? 'Failed to update progress'));
+    } on ServerException catch (e) {
+      return left(Failure(e.msg));
+    } catch (e) {
+      return left(Failure(e.toString()));
+    }
+  }
+
+  /// Removes one entry from the user's continue-watching history.
+  /// Response: `{ isSuccess: true, data: "<message>" }`; returns that message.
+  Future<Either<Failure, String>> deleteContinueWatching({
+    required dynamic id,
+  }) async {
+    try {
+      final accessToken = await TokenApi().getAccessToken();
+      final cookie = await TokenApi.getCookie();
+      Map<String, dynamic> headers = {
+        'x-device-type': DeviceUtil.getDeviceType(),
+      };
+      if (accessToken != null && accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $accessToken';
+      }
+      if (cookie != null && cookie.isNotEmpty) {
+        headers['Cookie'] = cookie;
+      }
+
+      final response = await _dio.request(
+        '$baseUrl/users/continue-watching/$id',
+        options: Options(
+          method: 'DELETE',
+          headers: headers,
+        ),
+      );
+
+      final body = response.data;
+      final isSuccess = body is Map && body['isSuccess'] == true;
+      if ((response.statusCode == 200 || response.statusCode == 204) &&
+          (isSuccess || body == null || body == '')) {
+        final message = body is Map ? body['data']?.toString() : null;
+        return right(message ?? 'Removed from history');
+      }
+      final message = body is Map
+          ? (body['message'] ?? body['data'])?.toString()
+          : null;
+      return left(Failure(message ?? 'Failed to remove from history'));
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message =
+          data is Map ? (data['message'] ?? data['data'])?.toString() : null;
+      return left(Failure(message ?? e.message ?? 'Failed to remove from history'));
     } on ServerException catch (e) {
       return left(Failure(e.msg));
     } catch (e) {

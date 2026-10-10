@@ -10,7 +10,10 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 class PlayerCubit extends Cubit<PlayerState> {
   final dynamic videoProviderId;
   final int? totalDuration;
-  PlayerCubit({this.videoProviderId, this.totalDuration})
+  // Freemium videos can be watched without logging in.
+  final bool allowGuest;
+  PlayerCubit(
+      {this.videoProviderId, this.totalDuration, this.allowGuest = false})
       : super(VideoInitial());
 
   VideoPlayerController? _controller;
@@ -20,6 +23,14 @@ class PlayerCubit extends Cubit<PlayerState> {
   Timer? _progressSyncTimer;
   int _lastKnownPositionSec = 0;
   int _lastKnownDurationSec = 0;
+  // True while a Cast receiver is playing the video. The local controller
+  // stays paused/muted and must not auto-play on (re)initialization.
+  bool _castingActive = false;
+  String? _currentLink;
+  List<VideoQuality>? _videoQualities;
+  // User-chosen volume for the in-app player (0..1). Re-applied after a
+  // quality switch recreates the controller and when casting ends.
+  double _volume = 1.0;
 
   Future<void> loadVideo({
     String? link,
@@ -41,12 +52,14 @@ class PlayerCubit extends Cubit<PlayerState> {
     // print('🎬 PlayerCubit: initVideoPlayer called');
 
     // 1. Check if user is logged in
-    if (!TokenApi.isUserLoggedIn()) {
+    if (!allowGuest && !TokenApi.isUserLoggedIn()) {
       emit(AuthRequired());
       return;
     }
 
-    enableWakeLock();
+    _currentLink = link;
+    _videoQualities = videoQualities ?? _videoQualities;
+    if (!_castingActive) enableWakeLock();
     emit(VideoLoading());
     try {
       _progressSyncTimer?.cancel();
@@ -71,7 +84,12 @@ class PlayerCubit extends Cubit<PlayerState> {
             _controller!.seekTo(seekPosition);
             _lastKnownPositionSec = seekPosition.inSeconds;
           }
-          _controller!.play();
+          if (_castingActive) {
+            _controller!.setVolume(0);
+          } else {
+            _controller!.setVolume(_volume);
+            _controller!.play();
+          }
           _showControls = false;
 
           if (_lastKnownDurationSec <= 0 &&
@@ -83,11 +101,7 @@ class PlayerCubit extends Cubit<PlayerState> {
           _startProgressSync();
 
           // print('📺 Emitting VideoInitialized state with ${videoQualities?.length ?? 0} qualities');
-          emit(VideoInitialized(
-              videoPlayerController: _controller!,
-              showControls: _showControls,
-              videoQualities: videoQualities,
-              currentQuality: quality));
+          _emitInitialized();
         }
       }, onError: (error) {
         // print('❌ Video initialization error: $error');
@@ -96,7 +110,9 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
       });
     _controller!.addListener(() async {
-      if (_controller != null && _controller!.value.isInitialized) {
+      if (_controller != null &&
+          _controller!.value.isInitialized &&
+          !_castingActive) {
         _lastKnownPositionSec = _controller!.value.position.inSeconds;
         if (_lastKnownDurationSec <= 0 &&
             _controller!.value.duration.inSeconds > 0) {
@@ -117,15 +133,22 @@ class PlayerCubit extends Cubit<PlayerState> {
             _showControls &&
             !isClosed) {
           _showControls = !_showControls;
-          emit(VideoInitialized(
-              videoPlayerController: _controller!,
-              showControls: _showControls,
-              videoQualities: videoQualities,
-              currentQuality: quality));
+          _emitInitialized();
         }
       }
     });
   }
+
+  void _emitInitialized() {
+    if (isClosed || !_isReady) return;
+    emit(VideoInitialized(
+        videoPlayerController: _controller!,
+        showControls: _showControls,
+        videoQualities: _videoQualities,
+        currentQuality: _currentQuality));
+  }
+
+  bool get _isReady => _controller != null && _controller!.value.isInitialized;
 
   void _startProgressSync() {
     _progressSyncTimer?.cancel();
@@ -138,8 +161,12 @@ class PlayerCubit extends Cubit<PlayerState> {
         }
       });
 
+      // While casting the local controller is paused, so keep syncing using
+      // the receiver position reported via [updateCastPosition].
       _progressSyncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (!isClosed && _controller != null && _controller!.value.isPlaying) {
+        if (!isClosed &&
+            (_castingActive ||
+                (_controller != null && _controller!.value.isPlaying))) {
           syncProgress();
         }
       });
@@ -153,8 +180,10 @@ class PlayerCubit extends Cubit<PlayerState> {
     int durSec = totalDuration ?? _lastKnownDurationSec;
 
     if (_controller != null && _controller!.value.isInitialized) {
-      posSec = _controller!.value.position.inSeconds;
-      _lastKnownPositionSec = posSec;
+      if (!_castingActive) {
+        posSec = _controller!.value.position.inSeconds;
+        _lastKnownPositionSec = posSec;
+      }
       if (durSec <= 0 && _controller!.value.duration.inSeconds > 0) {
         durSec = _controller!.value.duration.inSeconds;
         _lastKnownDurationSec = durSec;
@@ -175,14 +204,13 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void toggleControls() {
+    if (_controller == null) return;
     _showControls = !_showControls;
-    emit(VideoInitialized(
-        videoPlayerController: _controller!,
-        showControls: _showControls,
-        currentQuality: _currentQuality));
+    _emitInitialized();
   }
 
   void toggleVideoPlay() {
+    if (!_isReady || _castingActive) return;
     if (_controller!.value.isPlaying) {
       _controller!.pause();
       disableWakeLock();
@@ -192,17 +220,12 @@ class PlayerCubit extends Cubit<PlayerState> {
       enableWakeLock();
     }
 
-    emit(VideoInitialized(
-        videoPlayerController: _controller!,
-        showControls: _showControls,
-        currentQuality: _currentQuality));
+    _emitInitialized();
   }
 
   void forwardVideo() {
-    final currentPosition = _controller!.value.position;
-    final newPosition = currentPosition + const Duration(seconds: 10);
-    _controller!.seekTo(newPosition);
-    syncProgress();
+    if (!_isReady || _castingActive) return;
+    seekTo(_controller!.value.position + const Duration(seconds: 10));
   }
 
   void disposePlayer() {
@@ -215,33 +238,29 @@ class PlayerCubit extends Cubit<PlayerState> {
   }
 
   void backwardVideo() {
-    final currentPosition = _controller!.value.position;
-    final newPosition = currentPosition - const Duration(seconds: 10);
-    _controller!.seekTo(newPosition);
-    syncProgress();
+    if (!_isReady || _castingActive) return;
+    seekTo(_controller!.value.position - const Duration(seconds: 10));
   }
 
   void seekTo(Duration position) {
-    if (_controller == null) return;
+    if (!_isReady) return;
     final duration = _controller!.value.duration;
     var target = position;
     if (target < Duration.zero) target = Duration.zero;
     if (duration > Duration.zero && target > duration) target = duration;
     _controller!.seekTo(target);
+    _lastKnownPositionSec = target.inSeconds;
     syncProgress();
   }
 
   void changeSpeed(double speed) {
-    if (speed == _controller!.value.playbackSpeed) return;
+    if (!_isReady || speed == _controller!.value.playbackSpeed) return;
     _controller!.setPlaybackSpeed(speed);
-    emit(VideoInitialized(
-        videoPlayerController: _controller!,
-        showControls: _showControls,
-        currentQuality: _currentQuality));
+    _emitInitialized();
   }
 
   Future<void> changeQuality(VideoQuality videoQuality) async {
-    if (videoQuality.quality == _currentQuality) return;
+    if (!_isReady || videoQuality.quality == _currentQuality) return;
     _currentQuality = videoQuality.quality;
     final currentPosition = _controller!.value.position;
     initVideoPlayer(
@@ -250,7 +269,100 @@ class PlayerCubit extends Cubit<PlayerState> {
         seekPosition: currentPosition);
   }
 
-  get currentQuality => _currentQuality;
+  int? get currentQuality => _currentQuality;
+
+  double get volume => _volume;
+
+  /// Sets the in-app player volume (0 = muted, 1 = full). While casting the
+  /// local player stays muted; the value is applied once casting ends.
+  void setVolume(double volume) {
+    _volume = volume.clamp(0.0, 1.0);
+    if (_isReady && !_castingActive) {
+      _controller!.setVolume(_volume);
+    }
+  }
+
+  /// Link currently loaded in the local player (reflects quality changes).
+  String? get currentLink => _currentLink;
+
+  /// Where local playback currently is; used as the start point when a cast
+  /// session begins so the TV continues from the same spot.
+  Duration get currentPosition => _isReady
+      ? _controller!.value.position
+      : Duration(seconds: _lastKnownPositionSec);
+
+  bool get isCastingActive => _castingActive;
+
+  /// Receiver position while casting, so continue-watching keeps syncing.
+  void updateCastPosition(Duration position) {
+    if (_castingActive && position > Duration.zero) {
+      _lastKnownPositionSec = position.inSeconds;
+    }
+  }
+
+  /// Called when a Cast session connects/disconnects. While casting, the TV
+  /// plays the video, so the local player is paused and muted. Playback on
+  /// the TV is driven by [GoogleCastRemoteMediaClient] from the UI layer.
+  ///
+  /// On disconnect, the local player jumps to [resumePosition] (where the TV
+  /// left off) and resumes if [resumePlayback] is true, so it behaves exactly
+  /// like it did before casting.
+  void setCastingActive(bool active,
+      {Duration? resumePosition, bool resumePlayback = true}) {
+    if (_castingActive == active) return;
+    _castingActive = active;
+    if (active) {
+      if (_controller != null) {
+        _lastKnownPositionSec = currentPosition.inSeconds;
+        _controller!.pause();
+        _controller!.setVolume(0);
+      }
+      disableWakeLock();
+      _showControls = true;
+      _emitInitialized();
+      return;
+    }
+
+    // Still loading: initVideoPlayer starts playback itself once it's ready.
+    if (!_isReady) return;
+    _showControls = true;
+    _emitInitialized();
+    _resumeLocalPlayback(resumePosition, resumePlayback);
+  }
+
+  // The local player has been sitting paused for the whole cast session, so
+  // wait for the seek to land before playing, and rebuild the player if it
+  // didn't survive - otherwise the app could be left on a frozen frame.
+  Future<void> _resumeLocalPlayback(Duration? position, bool play) async {
+    final controller = _controller!;
+    final target =
+        position != null && position > Duration.zero ? position : null;
+    try {
+      await controller.setVolume(_volume);
+      if (target != null) {
+        final duration = controller.value.duration;
+        final clamped =
+            duration > Duration.zero && target > duration ? duration : target;
+        await controller.seekTo(clamped);
+        _lastKnownPositionSec = clamped.inSeconds;
+      }
+      // Casting started again, or the player was replaced, while seeking.
+      if (isClosed || _castingActive || controller != _controller) return;
+      if (controller.value.hasError) {
+        throw StateError(controller.value.errorDescription ?? 'player error');
+      }
+      if (play) {
+        await controller.play();
+        enableWakeLock();
+      }
+      syncProgress();
+      _emitInitialized();
+    } catch (_) {
+      if (isClosed || _castingActive || controller != _controller) return;
+      final link = _currentLink;
+      if (link != null) initVideoPlayer(link: link, seekPosition: target);
+    }
+  }
 
   Future<void> enableWakeLock() async {
     if (!await WakelockPlus.enabled) {

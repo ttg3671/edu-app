@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 
 import '../../../l10n/app_localizations.dart';
+import 'cast_error_reporter.dart';
 
 /// Cast icon that opens a device picker: lists every Chromecast/smart TV
 /// currently discoverable on the network and lets the user tap one to
@@ -18,19 +21,35 @@ class CastButton extends StatelessWidget {
       stream: GoogleCastSessionManager.instance.currentSessionStream,
       initialData: GoogleCastSessionManager.instance.currentSession,
       builder: (context, snapshot) {
-        final connectedDevice = snapshot.data?.device;
-        final isConnected = connectedDevice != null;
+        // The stream also reports sessions that are still connecting or
+        // already shutting down; only a connected one counts.
+        final connectionState = snapshot.data?.connectionState;
+        final isConnected =
+            connectionState == GoogleCastConnectState.connected;
+        final isConnecting =
+            connectionState == GoogleCastConnectState.connecting;
+        final connectedDevice = isConnected ? snapshot.data?.device : null;
         return InkWell(
           borderRadius: BorderRadius.circular(iconSize),
           onTap: () =>
               _showCastSheet(context, connectedDevice: connectedDevice),
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: Icon(
-              isConnected ? Icons.cast_connected : Icons.cast,
-              color: isConnected ? Colors.lightBlueAccent : Colors.white,
-              size: iconSize,
-            ),
+            child: isConnecting
+                ? SizedBox(
+                    width: iconSize,
+                    height: iconSize,
+                    child: const Padding(
+                      padding: EdgeInsets.all(3),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                  )
+                : Icon(
+                    isConnected ? Icons.cast_connected : Icons.cast,
+                    color: isConnected ? Colors.lightBlueAccent : Colors.white,
+                    size: iconSize,
+                  ),
           ),
         );
       },
@@ -40,7 +59,22 @@ class CastButton extends StatelessWidget {
   void _showCastSheet(BuildContext context,
       {GoogleCastDevice? connectedDevice}) {
     final localizations = AppLocalizations.of(context);
-    GoogleCastDiscoveryManager.instance.startDiscovery();
+    GoogleCastDiscoveryManager.instance.startDiscovery().catchError(
+        (Object e, StackTrace s) =>
+            reportCastError(e, s, 'start discovery failed'));
+    // Stopping discovery while a session is still being established drops the
+    // route mid-connect, so only stop when the sheet closes without a pick.
+    var deviceSelected = false;
+
+    // Log a non-fatal if nothing has been discovered after 15s.
+    final discoveryTimer = Timer(const Duration(seconds: 15), () {
+      if (GoogleCastDiscoveryManager.instance.devices.isEmpty) {
+        reportCastError(
+            StateError('No Cast devices discovered after 15 seconds'),
+            null,
+            'no devices discovered');
+      }
+    });
 
     showModalBottomSheet(
       context: context,
@@ -93,7 +127,15 @@ class CastButton extends StatelessWidget {
                     ),
                     trailing: TextButton(
                       onPressed: () async {
-                        await GoogleCastSessionManager.instance.endSession();
+                        // Also stop the video on the TV: a plain
+                        // endSession() leaves it playing there with nothing
+                        // in the app able to control it any more.
+                        try {
+                          await GoogleCastSessionManager.instance
+                              .endSessionAndStopCasting();
+                        } catch (e, s) {
+                          reportCastError(e, s, 'end session failed');
+                        }
                         if (sheetContext.mounted) Navigator.pop(sheetContext);
                       },
                       child: Text(
@@ -152,9 +194,23 @@ class CastButton extends StatelessWidget {
                                       color: Colors.white54, fontSize: 12))
                               : null,
                           onTap: () async {
+                            deviceSelected = true;
                             Navigator.pop(sheetContext);
-                            await GoogleCastSessionManager.instance
-                                .startSessionWithDevice(device);
+                            try {
+                              final started = await GoogleCastSessionManager
+                                  .instance
+                                  .startSessionWithDevice(device);
+                              if (!started) {
+                                reportCastError(
+                                    StateError(
+                                        'startSessionWithDevice returned false '
+                                        '(${device.modelName ?? 'unknown model'})'),
+                                    null,
+                                    'connect failed');
+                              }
+                            } catch (e, s) {
+                              reportCastError(e, s, 'connect failed');
+                            }
                           },
                         );
                       }).toList(),
@@ -167,7 +223,10 @@ class CastButton extends StatelessWidget {
         );
       },
     ).whenComplete(() {
-      GoogleCastDiscoveryManager.instance.stopDiscovery();
+      discoveryTimer.cancel();
+      if (!deviceSelected) {
+        GoogleCastDiscoveryManager.instance.stopDiscovery();
+      }
     });
   }
 }

@@ -37,6 +37,7 @@ class _ContinueWatchingScreenState extends State<ContinueWatchingScreen> with Wi
   dynamic _nextCursor;
   bool _hasMore = false;
   String? _errorMessage;
+  final Set<int> _deletingIds = {};
 
   @override
   void initState() {
@@ -328,6 +329,67 @@ class _ContinueWatchingScreenState extends State<ContinueWatchingScreen> with Wi
     if (mounted) {
       _fetchInitial();
     }
+  }
+
+  Future<void> _onDeleteItem(ContinueWatchingItem item) async {
+    if (_deletingIds.contains(item.id)) return;
+
+    final localizations = AppLocalizations.of(context);
+    final title = Convert.toTitleCase(item.lessonTitle);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizations?.translate('remove_from_history_title') ??
+            'Remove from history?'),
+        content: Text(
+          localizations?.translate('remove_from_history_message',
+                  params: {'title': title}) ??
+              '"$title" will be removed from your watch history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(localizations?.cancel ?? 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(localizations?.translate('remove') ?? 'Remove',
+                style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deletingIds.add(item.id));
+    final result = await Api.instance.deleteContinueWatching(id: item.id);
+    if (!mounted) return;
+
+    result.fold(
+      (failure) {
+        setState(() => _deletingIds.remove(item.id));
+        CustomSnackBar.show(
+          context: context,
+          message: localizations?.translate('failed_to_remove_from_history') ??
+              failure.message ??
+              'Failed to remove from history',
+        );
+      },
+      (_) {
+        setState(() {
+          _deletingIds.remove(item.id);
+          _items.removeWhere((i) => i.id == item.id);
+        });
+        CustomSnackBar.show(
+          context: context,
+          message: localizations?.translate('removed_from_history') ??
+              'Removed from history',
+          color: AppColor.primary,
+        );
+        // Pull the next page in if removing items emptied the visible list.
+        if (_items.isEmpty && _hasMore) _fetchInitial();
+      },
+    );
   }
 
   @override
@@ -666,7 +728,31 @@ class _ContinueWatchingScreenState extends State<ContinueWatchingScreen> with Wi
                       ],
                     ),
                   ),
-                  SizedBox(width: 10.w),
+                  SizedBox(width: 6.w),
+                  _deletingIds.contains(item.id)
+                      ? Padding(
+                          padding: EdgeInsets.all(10.r),
+                          child: SizedBox(
+                            width: 20.r,
+                            height: 20.r,
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.red,
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          tooltip: localizations
+                                  ?.translate('remove_from_history') ??
+                              'Remove from history',
+                          onPressed: () => _onDeleteItem(item),
+                          icon: Icon(
+                            Icons.delete_outline_rounded,
+                            size: 24.sp,
+                            color: Colors.red,
+                          ),
+                        ),
+                  SizedBox(width: 4.w),
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
                     decoration: BoxDecoration(

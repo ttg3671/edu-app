@@ -1,3 +1,4 @@
+import 'package:edu_gym/core/error/friendly_error.dart';
 import 'package:edu_gym/api/api.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -54,7 +55,8 @@ class ImageCubit extends Cubit<ImageState> {
         },
       );
     } catch (e) {
-      emit(ImageUploadFailed(e.toString()));
+      emit(ImageUploadFailed(
+          FriendlyError.clean(e.toString()) ?? FriendlyError.networkError));
       return null;
     }
   }

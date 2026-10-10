@@ -154,6 +154,21 @@ class VideoCubit extends Cubit<VideoState>{
     _controller!.seekTo(newPosition);
   }
 
+  /// Called when a Cast session starts/ends. While casting, the TV is the
+  /// one playing the video, so the local (invisible) player is paused and
+  /// muted instead of fighting the receiver for audio output. Playback
+  /// itself while casting is driven entirely by GoogleCastRemoteMediaClient
+  /// from the UI layer, not by this cubit.
+  void setCastingActive(bool active){
+    if(_controller==null) return;
+    if(active){
+      _controller!.pause();
+      _controller!.setVolume(0);
+    } else {
+      _controller!.setVolume(1);
+    }
+  }
+
   void pauseVideo(){
     if(_controller!=null){
       _controller!.pause();

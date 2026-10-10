@@ -8,6 +8,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
     private val deviceIdChannel = "com.edugarciamovimiento/device_id"
+    private var castBridge: CastBridge? = null
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -24,5 +25,12 @@ class MainActivity : FlutterFragmentActivity() {
                 result.notImplemented()
             }
         }
+        castBridge = CastBridge(flutterEngine.dartExecutor.binaryMessenger)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        castBridge?.dispose()
+        castBridge = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 }

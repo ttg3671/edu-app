@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../core/error/friendly_error.dart';
 import '../core/utils/language_manager.dart';
 
 class LanguageCubit extends Cubit<Locale> {
@@ -10,6 +11,7 @@ class LanguageCubit extends Cubit<Locale> {
   // Load saved language on app start
   Future<void> loadSavedLanguage() async {
     final locale = await LanguageManager.getLocale();
+    FriendlyError.languageCode = locale.languageCode;
     emit(locale);
   }
 
@@ -17,6 +19,7 @@ class LanguageCubit extends Cubit<Locale> {
   Future<void> changeLanguage(String languageCode) async {
     final locale = Locale(languageCode);
     await LanguageManager.setLocale(locale);
+    FriendlyError.languageCode = locale.languageCode;
     emit(locale);
   }
 

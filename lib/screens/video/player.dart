@@ -8,6 +8,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../cubits/video_cubit.dart';
+import '../../features/quality_player/src/cast_error_reporter.dart';
+import '../../features/quality_player/src/video_seek_bar.dart' show CastSeekBar;
 
 class Player extends StatefulWidget {
   final bool isTrailer;
@@ -22,11 +24,25 @@ class Player extends StatefulWidget {
 class _PlayerState extends State<Player> {
   StreamSubscription? _sessionSubscription;
 
+  // Whether a Cast session is currently connected. While true, the local
+  // video_player is paused/muted (see VideoCubit.setCastingActive) and the
+  // playback controls below are re-routed to GoogleCastRemoteMediaClient so
+  // they act on the TV instead of the hidden local player.
+  bool _isCasting = false;
+
   @override
   void initState() {
     super.initState();
     _sessionSubscription = GoogleCastSessionManager.instance.currentSessionStream.listen((session) {
-      if (session != null) {
+      if (!mounted) return;
+      final isConnected = session != null;
+      setState(() => _isCasting = isConnected);
+      try {
+        context.read<VideoCubit>().setCastingActive(isConnected);
+      } catch (_) {
+        // Cubit not ready yet (shouldn't happen once the tree is built).
+      }
+      if (isConnected) {
         _loadMedia();
       }
     });
@@ -44,7 +60,20 @@ class _PlayerState extends State<Player> {
       ),
     );
 
-    GoogleCastRemoteMediaClient.instance.loadMedia(mediaInfo);
+    GoogleCastRemoteMediaClient.instance.loadMedia(mediaInfo).catchError(
+        (Object e, StackTrace s) => reportCastError(e, s, 'load media failed'));
+  }
+
+  void _toggleCastPlayback(CastMediaPlayerState? playerState) {
+    final isPlaying = playerState == CastMediaPlayerState.playing || playerState == CastMediaPlayerState.buffering;
+    final action = isPlaying ? GoogleCastRemoteMediaClient.instance.pause() : GoogleCastRemoteMediaClient.instance.play();
+    action.catchError((Object e, StackTrace s) => reportCastError(e, s, 'cast play/pause failed'));
+  }
+
+  void _castSeekRelative(Duration delta) {
+    GoogleCastRemoteMediaClient.instance
+        .seek(GoogleCastMediaSeekOption(position: delta, relative: true))
+        .catchError((Object e, StackTrace s) => reportCastError(e, s, 'cast seek failed'));
   }
 
   @override
@@ -92,7 +121,17 @@ class _PlayerState extends State<Player> {
                     subtitle: Text(device.modelName ?? 'Chromecast Device'),
                     onTap: () async {
                       Navigator.pop(context);
-                      await GoogleCastSessionManager.instance.startSessionWithDevice(device);
+                      try {
+                        final started = await GoogleCastSessionManager.instance.startSessionWithDevice(device);
+                        if (!started) {
+                          reportCastError(
+                              StateError('startSessionWithDevice returned false (${device.modelName ?? 'unknown model'})'),
+                              null,
+                              'connect failed');
+                        }
+                      } catch (e, s) {
+                        reportCastError(e, s, 'connect failed');
+                      }
                     },
                   );
                 },
@@ -268,7 +307,54 @@ class _PlayerState extends State<Player> {
                 child: AnimatedOpacity(
                   opacity: state.showControls ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 300),
-                  child: Row(
+                  child: _isCasting
+                      ? StreamBuilder<GoggleCastMediaStatus?>(
+                          stream: GoogleCastRemoteMediaClient.instance.mediaStatusStream,
+                          initialData: GoogleCastRemoteMediaClient.instance.mediaStatus,
+                          builder: (context, snapshot) {
+                            final playerState = snapshot.data?.playerState;
+                            final isPlaying = playerState == CastMediaPlayerState.playing || playerState == CastMediaPlayerState.buffering;
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                InkWell(
+                                  onTap: () => state.showControls
+                                      ? _castSeekRelative(const Duration(seconds: -10))
+                                      : context.read<VideoCubit>().toggleControls(),
+                                  child: Container(
+                                      padding: EdgeInsets.all(10.r),
+                                      decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+                                      child: Icon(Icons.replay_10, size: iconSize, color: Colors.white)),
+                                ),
+                                InkWell(
+                                  onTap: () => state.showControls
+                                      ? _toggleCastPlayback(playerState)
+                                      : context.read<VideoCubit>().toggleControls(),
+                                  child: Container(
+                                    padding: EdgeInsets.all(10.r),
+                                    decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+                                    child: Icon(
+                                      isPlaying ? Icons.pause : Icons.play_arrow,
+                                      size: iconSize,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () => state.showControls
+                                      ? _castSeekRelative(const Duration(seconds: 10))
+                                      : context.read<VideoCubit>().toggleControls(),
+                                  child: Container(
+                                    padding: EdgeInsets.all(10.r),
+                                    decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+                                    child: Icon(Icons.forward_10, size: iconSize, color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        )
+                      : Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       InkWell(
@@ -379,7 +465,12 @@ class _PlayerState extends State<Player> {
                               ],
                             ),
                           ),
-                          VideoProgressIndicator(state.videoPlayerController, allowScrubbing: true),
+                          _isCasting
+                              ? const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 10),
+                                  child: CastSeekBar(),
+                                )
+                              : VideoProgressIndicator(state.videoPlayerController, allowScrubbing: true),
                           if (widget.isLandscape == true) SizedBox(height: 40.h,)
                         ],
                       ),

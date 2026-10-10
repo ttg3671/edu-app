@@ -13,6 +13,7 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
   final int? totalDuration; // Total duration in seconds from video API
   final int? moduleId; // Module ID for back navigation
   final Duration? initialPosition; // Resume position
+  final bool allowGuest; // Freemium: playable without login
 
   const LandscapeVideoPlayerScreen({
     super.key,
@@ -24,6 +25,7 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
     this.totalDuration,
     this.moduleId,
     this.initialPosition,
+    this.allowGuest = false,
   });
 
   void _handleExit(BuildContext context) {
@@ -78,16 +80,21 @@ class LandscapeVideoPlayerScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
+      // No SafeArea: the video uses the whole screen and the player keeps
+      // its own controls clear of notches and system bars.
+      body: SizedBox.expand(
         child: QualityPlayer(
           link: videoUrl,
           videoQualities: qualities, // Pass video qualities
           thumbnailUrl: thumbnailUrl, // Pass thumbnail for loading state
           videoTitle: lessonTitle,
           alwaysLandscape: true,
+          height: double.infinity, // Stay full screen when rotated upright
+
           videoProviderId: videoProviderId,
           totalDuration: totalDuration,
           initialPosition: initialPosition,
+          allowGuest: allowGuest,
           onExitIconTap: () => _handleExit(context),
         ),
       ),
