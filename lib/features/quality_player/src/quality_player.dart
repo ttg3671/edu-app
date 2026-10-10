@@ -416,18 +416,23 @@ class _QualityPlayerState extends State<QualityPlayer> {
             // Upright phone, wide video: size the whole player (video and
             // every control on top of it) to the video itself, so the
             // buttons sit on the picture instead of on the black page
-            // around it. The box is away from the screen edges, so the
-            // system-bar padding no longer applies to it.
-            return Center(
-              child: AspectRatio(
-                aspectRatio: state.videoPlayerController.value.aspectRatio,
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: true,
-                  removeBottom: true,
-                  removeLeft: true,
-                  removeRight: true,
-                  child: player,
+            // around it. The box is pinned to the top of the page, just
+            // below the notch / status bar, so the system-bar padding no
+            // longer applies inside it.
+            return SafeArea(
+              bottom: false,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: AspectRatio(
+                  aspectRatio: state.videoPlayerController.value.aspectRatio,
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    removeBottom: true,
+                    removeLeft: true,
+                    removeRight: true,
+                    child: player,
+                  ),
                 ),
               ),
             );
@@ -666,12 +671,12 @@ class _QualityPlayerState extends State<QualityPlayer> {
     // Corner buttons use the small insets whenever the player isn't the
     // full-height upright layout.
     final bool compact = isLandscape || _isBoxed(isLandscape, state);
-    // Fill the whole screen when the video's shape matches the way the
-    // phone is held (wide video in landscape, upright video in portrait);
-    // the little that doesn't fit is cropped. Otherwise show all of it.
-    final bool fillScreen = isLandscape
-        ? isWideVideo
-        : widget.height == double.infinity && !isWideVideo;
+    // Full screen (landscape) always fills the whole screen, whatever the
+    // video's shape - an upright video is cropped to a landscape picture.
+    // Upright, only an upright video fills the screen; a wide one is shown
+    // whole.
+    final bool fillScreen =
+        isLandscape || (widget.height == double.infinity && !isWideVideo);
     return Stack(
       children: [
         SizedBox.expand(
