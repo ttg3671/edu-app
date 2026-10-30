@@ -90,6 +90,19 @@ class _QualityPlayerState extends State<QualityPlayer> {
   Timer? _castReconnectTimer;
   static const _castReconnectTimeout = Duration(seconds: 20);
 
+  // Links the TV hasn't tried yet for this video, best first. Some videos
+  // can't be played on some TVs in some formats (Vimeo HLS streams, files
+  // above 1080p on non-4K Chromecasts), so when the TV reports an error the
+  // next one is loaded instead of leaving the error on screen.
+  List<VideoQuality> _castFallbacks = const [];
+  // Last `failed` value seen from the TV, so only a new failure moves on.
+  bool _castFailed = false;
+  // A fallback is loading after a failure; don't show the error meanwhile.
+  bool _castRetrying = false;
+
+  // Highest progressive resolution every Chromecast can decode.
+  static const _castMaxSafeQuality = 1080;
+
   @override
   void initState() {
     super.initState();
@@ -116,9 +129,11 @@ class _QualityPlayerState extends State<QualityPlayer> {
     if (!mounted) return;
     final wasCasting = _isCasting;
     final hadPending = _castPendingPlaying != null;
+    final wasRetrying = _castRetrying;
     _syncCastState();
     if (wasCasting != _isCasting ||
-        hadPending != (_castPendingPlaying != null)) {
+        hadPending != (_castPendingPlaying != null) ||
+        wasRetrying != _castRetrying) {
       setState(() {});
     }
   }
@@ -148,6 +163,9 @@ class _QualityPlayerState extends State<QualityPlayer> {
     }
 
     if (!_isCasting || state.phase != CastPhase.connected) return;
+    if (state.failed && !_castFailed) _onCastLoadFailed();
+    _castFailed = state.failed;
+    if (state.hasMedia) _castRetrying = false;
     if (state.isPlaying) {
       _castWasPlaying = true;
     } else if (state.playback == CastPlayback.paused) {
@@ -175,7 +193,6 @@ class _QualityPlayerState extends State<QualityPlayer> {
     }
     _lastCastPosition = startAt;
     _castWasPlaying = true;
-    _castQuality = _playerCubit.currentQuality;
     _castSpeed = 1.0;
     _isCasting = true;
     // Show "playing" while the TV is still loading the video.
@@ -188,7 +205,13 @@ class _QualityPlayerState extends State<QualityPlayer> {
     _playerCubit.setCastingActive(true);
     // A TV that was left muted would otherwise play the video silently.
     if (_cast.state.value.muted) _cast.setMuted(false);
-    _loadMedia(link: _playerCubit.currentLink, startPosition: startAt);
+    // Keep a quality the user picked; "Auto" (HLS) lets the TV get the most
+    // reliable file instead.
+    final localQuality = _playerCubit.currentQuality;
+    _castLoad(
+      preferred: localQuality == VideoQuality.auto ? null : localQuality,
+      startPosition: startAt,
+    );
   }
 
   void _stopCasting() {
@@ -216,13 +239,88 @@ class _QualityPlayerState extends State<QualityPlayer> {
     _castPendingPlaying = null;
   }
 
+  /// Loads the video on the TV, starting with [preferred] (a quality value)
+  /// if given, and keeps the other links as fallbacks.
+  void _castLoad({int? preferred, required Duration startPosition}) {
+    // Only a failure after this load counts, not one left from before.
+    _castFailed = _cast.state.value.failed;
+    _castRetrying = false;
+    _castLoadNext(_castCandidates(preferred), startPosition);
+  }
+
+  void _castLoadNext(List<VideoQuality> candidates, Duration startPosition) {
+    final next = candidates.first;
+    _castFallbacks = candidates.sublist(1);
+    _castQuality = next.quality;
+    _loadMedia(link: next.link, startPosition: startPosition);
+  }
+
+  /// The TV couldn't play the current link: try the next one from where it
+  /// was supposed to start. The error is only shown once none are left.
+  void _onCastLoadFailed() {
+    if (_castFallbacks.isEmpty) {
+      _castRetrying = false;
+      return;
+    }
+    _castRetrying = true;
+    if (_castWasPlaying) _setCastPending(true);
+    _castLoadNext(_castFallbacks, _lastCastPosition);
+  }
+
+  /// Links to try on the TV, best first. Progressive MP4 up to 1080p goes
+  /// first because every Cast receiver plays it. HLS fails for some videos:
+  /// Vimeo serves some streams with fMP4 segments, which the default receiver
+  /// only plays when told so, and the Android plugin can't pass that through.
+  /// Files above 1080p fail on Chromecasts without 4K, so they go last.
+  List<VideoQuality> _castCandidates(int? preferred) {
+    final qualities = widget.videoQualities ?? const <VideoQuality>[];
+    if (qualities.isEmpty) {
+      return [
+        VideoQuality(
+          quality: preferred ?? VideoQuality.auto,
+          link: _playerCubit.currentLink ?? widget.link,
+        ),
+      ];
+    }
+    int group(VideoQuality q) => q.quality == VideoQuality.auto
+        ? 1
+        : (q.quality <= _castMaxSafeQuality ? 0 : 2);
+    final ordered = [...qualities]..sort((a, b) {
+        final byGroup = group(a).compareTo(group(b));
+        if (byGroup != 0) return byGroup;
+        // Highest safe resolution first; above 1080p, the smallest first.
+        return group(a) == 2
+            ? a.quality.compareTo(b.quality)
+            : b.quality.compareTo(a.quality);
+      });
+    final chosen = ordered.where((q) => q.quality == preferred).toList();
+    return [...chosen, ...ordered.where((q) => !chosen.contains(q))];
+  }
+
+  /// MIME type the receiver uses to pick its player. Newer Vimeo HLS links
+  /// (`.../play/<id>/hls?...`) have no `.m3u8`, and sending them as
+  /// `video/mp4` made the TV fail.
+  String _castContentType(String link) {
+    final lower = link.toLowerCase();
+    final uri = Uri.tryParse(lower);
+    final isHlsQuality = widget.videoQualities?.any(
+            (q) => q.link == link && q.quality == VideoQuality.auto) ??
+        false;
+    if (isHlsQuality ||
+        lower.contains('.m3u8') ||
+        (uri?.pathSegments.contains('hls') ?? false)) {
+      return 'application/x-mpegurl';
+    }
+    if (uri?.path.endsWith('.mpd') ?? false) return 'application/dash+xml';
+    return 'video/mp4';
+  }
+
   void _loadMedia({String? link, Duration? startPosition}) {
     final mediaLink = link ?? widget.link;
-    final isHls = mediaLink.toLowerCase().contains('.m3u8');
     final mediaInfo = GoogleCastMediaInformation(
       contentId: mediaLink,
       streamType: CastMediaStreamType.buffered,
-      contentType: isHls ? 'application/x-mpegurl' : 'video/mp4',
+      contentType: _castContentType(mediaLink),
       metadata: GoogleCastMovieMediaMetadata(
         title: widget.videoTitle ?? 'Edu Gym Video',
         images: widget.thumbnailUrl != null
@@ -251,8 +349,8 @@ class _QualityPlayerState extends State<QualityPlayer> {
     if (!state.hasMedia) {
       _castWasPlaying = true;
       _setCastPending(true);
-      _loadMedia(
-        link: _castLinkForQuality(),
+      _castLoad(
+        preferred: _castQuality,
         startPosition: state.finished ? Duration.zero : _lastCastPosition,
       );
       return;
@@ -265,19 +363,13 @@ class _QualityPlayerState extends State<QualityPlayer> {
         reportCastError(e, s, 'cast play/pause failed'));
   }
 
-  String? _castLinkForQuality() {
-    final qualities = widget.videoQualities ?? const <VideoQuality>[];
-    for (final q in qualities) {
-      if (q.quality == _castQuality) return q.link;
-    }
-    return _playerCubit.currentLink;
-  }
-
   void _castChangeQuality(VideoQuality videoQuality) {
     if (videoQuality.quality == _castQuality) return;
     final currentPosition = _cast.position.value;
-    setState(() => _castQuality = videoQuality.quality);
-    _loadMedia(link: videoQuality.link, startPosition: currentPosition);
+    setState(() => _castLoad(
+          preferred: videoQuality.quality,
+          startPosition: currentPosition,
+        ));
   }
 
   void _castChangeSpeed(double speed) {
@@ -899,14 +991,15 @@ class _QualityPlayerState extends State<QualityPlayer> {
       builder: (context, state, _) {
         final name = state.deviceName;
         final String text;
+        final failed = state.failed && !_castRetrying;
         if (state.phase == CastPhase.suspended) {
           text = 'Reconnecting to TV...';
-        } else if (state.failed) {
+        } else if (failed) {
           text = 'This video could not be played on the TV';
         } else {
           text = name == null || name.isEmpty ? 'Casting' : 'Casting to $name';
         }
-        return _castingLabelText(text, warning: state.failed);
+        return _castingLabelText(text, warning: failed);
       },
     );
   }
